@@ -1,4 +1,6 @@
 # @hazbase/kit
+[![npm version](https://badge.fury.io/js/@hazbase%2Fkit.svg)](https://badge.fury.io/js/@hazbase%2Fkit)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 ## Overview
 `@hazbase/kit` is an **SDK that wraps pre‑designed smart contracts for safe Web (TypeScript) access**.  
