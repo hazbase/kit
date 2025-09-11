@@ -1,0 +1,40 @@
+{
+    "name": "@hazbase/kit",
+    "version": "0.0.6",
+    "description": "Developer convenience layer for HAZAMA BASE contracts",
+    "author": "IndieSquare Inc <info@hazbase.com>",
+  "keywords": [],
+  "license": "Apache-2.0",
+    "main": "dist/index.js",
+    "module": "dist/index.mjs",
+    "types": "dist/index.d.ts",
+    "exports": {
+        ".": {
+            "require": "./dist/index.js",
+            "import": "./dist/index.mjs",
+            "types": "./dist/index.d.ts"
+        }
+    },
+    "files": [
+        "dist"
+    ],
+    "sideEffects": false,
+    "dependencies": {
+        "@hazbase/relayer": "^0.0.13",
+        "ethers": "^6.12.1"
+    },
+    "devDependencies": {
+        "@types/node": "^20.11.19",
+        "rimraf": "^5.0.1",
+        "tsup": "^7.3.0",
+        "typescript": "^5.4.0"
+    },
+    "scripts": {
+        "build": "tsup",
+        "clean": "rimraf dist",
+        "prepublishOnly": "npm run build"
+    },
+    "publishConfig": {
+        "access": "public"
+    }
+}
