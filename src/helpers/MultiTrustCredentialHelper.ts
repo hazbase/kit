@@ -24,6 +24,7 @@ import {
   deployViaFactory,
   DeployViaFactoryOptions
 } from '../deployViaFactory';
+import { DEFAULT_VERIFIER_ADDRESSES } from '../constants';
 
 /* ------------------------------------------------------------------ */
 /*                               Types                                 */
@@ -35,7 +36,7 @@ export type Bytes32 = string;
 /** Deploy-time arguments mapped to MultiTrustCredential.initialize(...) */
 export interface DeployArgs {
   admin: Address;                   // DEFAULT_ADMIN_ROLE holder
-  verifier: Address;                // IVerifier contract address
+  verifier?: Address;                // IVerifier contract address
   trustedForwarders?: readonly Address[]; // ERC-2771 forwarders
 }
 
@@ -159,6 +160,15 @@ export class MultiTrustCredentialHelper {
     signer: ethers.Signer,
     opts?: Partial<Omit<DeployViaFactoryOptions, 'contractType' | 'implABI' | 'initArgs' | 'signer'>>
   ): Promise<DeployResult> {
+    
+    if (!args?.verifier) {
+      const provider = signer.provider;
+      if (!provider) throw new Error('Signer must have a provider');
+      
+      const chainId  = Number((await provider.getNetwork()).chainId);
+      args.verifier = DEFAULT_VERIFIER_ADDRESSES[chainId];
+    }
+
     const res = await deployViaFactory({
       contractType : MTC.contractType,
       implABI      : MTC.abi,
@@ -330,9 +340,9 @@ export class MultiTrustCredentialHelper {
   async proveMetric(
     tokenId: bigint,
     metricId: Bytes32 | string,
-    a: readonly [bigint, bigint],
-    b: readonly [[bigint, bigint], [bigint, bigint]],
-    c: readonly [bigint, bigint],
+    a: readonly [string, string],
+    b: readonly [[string, string], [string, string]],
+    c: readonly [string, string],
     pubSignals: readonly [bigint, bigint, bigint, bigint, bigint, bigint]
   ): Promise<boolean> {
     return this.contract.proveMetric(

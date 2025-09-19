@@ -27,7 +27,7 @@ export const DEFAULT_IMPL_OWNER: Record<number,string> = {
 }
 
 export const DEFAULT_VERIFIER_ADDRESSES: Record<number, string> = {
-  11155111: '0x65038d8924151362B9811486D2FF9E547118A2e1'
+  11155111: '0xE56f85C20611910B9E2B16A4Fe5010F959273F5b'
 }
 
 export const DEFAULT_INIT_FN: Record<string,string> = {

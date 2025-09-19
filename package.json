@@ -1,7 +1,7 @@
 {
     "name": "@hazbase/kit",
     "version": "0.0.7",
-    "description": "Developer convenience layer for HAZAMA BASE contracts",
+    "description": "An SDK that wraps pre‑designed smart contracts for safe Web (TypeScript) access.",
     "author": "IndieSquare Inc <info@hazbase.com>",
     "keywords": [],
     "license": "Apache-2.0",
