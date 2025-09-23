@@ -1,6 +1,6 @@
 {
     "name": "@hazbase/kit",
-    "version": "0.0.9",
+    "version": "0.0.10",
     "description": "An SDK that wraps pre‑designed smart contracts for safe Web (TypeScript) access.",
     "author": "IndieSquare Inc <info@hazbase.com>",
     "keywords": [
