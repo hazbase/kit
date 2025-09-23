@@ -32,7 +32,7 @@
     ],
     "sideEffects": false,
     "dependencies": {
-        "@hazbase/relayer": "^0.0.13",
+        "@hazbase/relayer": "^0.0.17",
         "ethers": "^6.12.1"
     },
     "devDependencies": {
