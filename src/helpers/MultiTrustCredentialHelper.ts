@@ -87,10 +87,15 @@ export interface UpdateItemStruct {
 /* Matches CompareMask in .sol: NONE=0, GTE=1, LTE=2, EQ=4.            */
 export const CompareMask = {
   NONE: 0 as 0,
-  GTE : 1 as 1,
-  LTE : 2 as 2,
+  GT  : 1 as 1,
+  LT  : 2 as 2,
+  NEQ : 3 as 3, // GT | LT
   EQ  : 4 as 4,
+  GTE : 5 as 5, // GT | EQ
+  LTE : 6 as 6, // LT | EQ
+  ALL : 7 as 7  // GT | LT | EQ
 } as const;
+
 export type CompareMaskKey = keyof typeof CompareMask;
 
 /* ------------------------------------------------------------------ */
@@ -116,11 +121,6 @@ export function toBytes32(v: Bytes32 | string | number | bigint): Bytes32 {
   return (`0x${n.toString(16).padStart(64, '0')}`) as Bytes32;
 }
 
-/** Deterministic tokenId convention used on-chain: uint256(uint160(owner)). */
-export function tokenIdFor(owner: Address): bigint {
-  return BigInt(owner);
-}
-
 /* ------------------------------------------------------------------ */
 /*                              Events                                 */
 /* ------------------------------------------------------------------ */
@@ -140,6 +140,8 @@ export class MultiTrustCredentialHelper {
   readonly address : Address;
   readonly contract: ethers.Contract;
   readonly runner  : ContractRunner;
+
+  public static CompareMask = CompareMask;
 
   /** Internal constructor; prefer `attach` or `deploy`. */
   private constructor(address: Address, runner: ContractRunner) {
@@ -442,7 +444,7 @@ export class MultiTrustCredentialHelper {
   }
 
   /* ================================================================ */
-  /* 8) Role helpers (optional conveniences)                           */
+  /* 8) Role helpers (optional conveniences)                          */
   /* ================================================================ */
 
   /** Grant a role (bytes32) to an account. Requires DEFAULT_ADMIN_ROLE. */
@@ -466,6 +468,15 @@ export class MultiTrustCredentialHelper {
   /** Check if `account` holds `role`. */
   async hasRole(role: Bytes32 | string, account: Address): Promise<boolean> {
     return this.contract.hasRole(toBytes32(role), account) as Promise<boolean>;
+  }
+
+  /* ================================================================ */
+  /* Utils                                                            */
+  /* ================================================================ */
+
+  /** Deterministic tokenId convention used on-chain: uint256(uint160(owner)). */
+  static tokenIdFor(owner: Address): bigint {
+    return BigInt(owner);
   }
 }
 
