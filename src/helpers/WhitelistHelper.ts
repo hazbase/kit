@@ -53,9 +53,9 @@ export enum KYCLevel {
 }
 
 /** zkSNARK proof tuple shapes (Groth16) */
-export type ProofA = readonly [bigint, bigint];
-export type ProofB = readonly [[bigint, bigint], [bigint, bigint]];
-export type ProofC = readonly [bigint, bigint];
+export type ProofA = readonly [string, string];
+export type ProofB = readonly [[string, string], [string, string]];
+export type ProofC = readonly [string, string];
 /** Public signals: [mode, root, nullifier, addr160, reserved5, reserved6] */
 export type PubSignals = readonly [
   bigint,
@@ -86,6 +86,8 @@ export class WhitelistHelper {
   readonly address: Address;
   readonly contract: ethers.Contract;
   readonly runner: ContractRunner;
+
+  public static KYCLevel = KYCLevel;
 
   /** Internal constructor; prefer `attach` or `deploy`. */
   private constructor(address: Address, runner: ContractRunner) {

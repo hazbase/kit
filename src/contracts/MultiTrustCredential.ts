@@ -2,7 +2,7 @@
 /* eslint-disable prettier/prettier */
 export const MultiTrustCredential = {
   contractType: 'MultiTrustCredential',
-  initArgs: 'initialize(address admin, address _verifier, address[] calldata forwarders)',
+  initArgs: 'initialize(address admin, address[] calldata forwarders)',
   abi: [
     {
       "inputs": [],
@@ -304,6 +304,19 @@ export const MultiTrustCredential = {
         }
       ],
       "name": "CompareMaskChanged",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": false,
+          "internalType": "address",
+          "name": "verifier",
+          "type": "address"
+        }
+      ],
+      "name": "GroupVerifierSet",
       "type": "event"
     },
     {
@@ -808,6 +821,19 @@ export const MultiTrustCredential = {
       "type": "function"
     },
     {
+      "inputs": [],
+      "name": "gVerifier",
+      "outputs": [
+        {
+          "internalType": "contract IVerifier",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
       "inputs": [
         {
           "internalType": "uint256",
@@ -991,11 +1017,6 @@ export const MultiTrustCredential = {
           "type": "address"
         },
         {
-          "internalType": "address",
-          "name": "_verifier",
-          "type": "address"
-        },
-        {
           "internalType": "address[]",
           "name": "forwarders",
           "type": "address[]"
@@ -1166,6 +1187,11 @@ export const MultiTrustCredential = {
               "internalType": "string",
               "name": "uri",
               "type": "string"
+            },
+            {
+              "internalType": "uint32",
+              "name": "expiresAt",
+              "type": "uint32"
             }
           ],
           "internalType": "struct MultiTrustCredential.MetricInput",
@@ -1206,6 +1232,11 @@ export const MultiTrustCredential = {
               "internalType": "string",
               "name": "uri",
               "type": "string"
+            },
+            {
+              "internalType": "uint32",
+              "name": "expiresAt",
+              "type": "uint32"
             }
           ],
           "internalType": "struct MultiTrustCredential.MintItem[]",
@@ -1264,6 +1295,50 @@ export const MultiTrustCredential = {
         {
           "internalType": "bool",
           "name": "",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "tokenId",
+          "type": "uint256"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "metricId",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "uint256[2]",
+          "name": "a",
+          "type": "uint256[2]"
+        },
+        {
+          "internalType": "uint256[2][2]",
+          "name": "b",
+          "type": "uint256[2][2]"
+        },
+        {
+          "internalType": "uint256[2]",
+          "name": "c",
+          "type": "uint256[2]"
+        },
+        {
+          "internalType": "uint256[6]",
+          "name": "pubSignals",
+          "type": "uint256[6]"
+        }
+      ],
+      "name": "proveGroupMetric",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "ok",
           "type": "bool"
         }
       ],
@@ -1645,6 +1720,19 @@ export const MultiTrustCredential = {
     {
       "inputs": [
         {
+          "internalType": "address",
+          "name": "_verifier",
+          "type": "address"
+        }
+      ],
+      "name": "updateGroupVerifier",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
           "internalType": "uint256",
           "name": "tokenId",
           "type": "uint256"
@@ -1667,9 +1755,9 @@ export const MultiTrustCredential = {
               "type": "uint256"
             },
             {
-              "internalType": "uint256",
-              "name": "deadline",
-              "type": "uint256"
+              "internalType": "uint32",
+              "name": "expiresAt",
+              "type": "uint32"
             }
           ],
           "internalType": "struct MultiTrustCredential.MetricUpdate",
@@ -1705,6 +1793,11 @@ export const MultiTrustCredential = {
               "internalType": "uint256",
               "name": "leafFull",
               "type": "uint256"
+            },
+            {
+              "internalType": "uint32",
+              "name": "expiresAt",
+              "type": "uint32"
             }
           ],
           "internalType": "struct MultiTrustCredential.UpdateItem[]",
@@ -1713,6 +1806,19 @@ export const MultiTrustCredential = {
         }
       ],
       "name": "updateMetricBatch",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "_verifier",
+          "type": "address"
+        }
+      ],
+      "name": "updateVerifier",
       "outputs": [],
       "stateMutability": "nonpayable",
       "type": "function"

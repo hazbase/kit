@@ -36,7 +36,6 @@ export type Bytes32 = string;
 /** Deploy-time arguments mapped to MultiTrustCredential.initialize(...) */
 export interface DeployArgs {
   admin: Address;                   // DEFAULT_ADMIN_ROLE holder
-  verifier?: Address;                // IVerifier contract address
   trustedForwarders?: readonly Address[]; // ERC-2771 forwarders
 }
 
@@ -57,6 +56,8 @@ export interface MetricInputStruct {
   leafFull: bigint;
   /** tokenURI for new token (empty string allowed) */
   uri?: string;
+  /** expire date time for metric */
+  expiresAt?: bigint;
 }
 
 export interface MintItemStruct {
@@ -65,13 +66,14 @@ export interface MintItemStruct {
   value: number | bigint;
   leafFull: bigint;
   uri?: string;
+  expiresAt?: bigint;
 }
 
 export interface MetricUpdateStruct {
   metricId: Bytes32 | string;
   newValue: number | bigint; // uint32
   leafFull: bigint;          // uint256
-  deadline: bigint;          // uint256 (not enforced on-chain; included for future-proofing)
+  expiresAt?: bigint;
 }
 
 export interface UpdateItemStruct {
@@ -79,6 +81,7 @@ export interface UpdateItemStruct {
   metricId: Bytes32 | string;
   newValue: number | bigint; // uint32
   leafFull: bigint;          // uint256
+  expiresAt?: bigint;
 }
 
 /* ------------------------------------------------------------------ */
@@ -86,11 +89,12 @@ export interface UpdateItemStruct {
 /* ------------------------------------------------------------------ */
 /* Matches CompareMask in .sol: NONE=0, GTE=1, LTE=2, EQ=4.            */
 export const CompareMask = {
+  GT  : 1 << 0 as 1,
+  LT  : 1 << 1 as 2,
+  EQ  : 1 << 2 as 3, // GT | LT
+  IN  : 1 << 3 as 8,
+  
   NONE: 0 as 0,
-  GT  : 1 as 1,
-  LT  : 2 as 2,
-  NEQ : 3 as 3, // GT | LT
-  EQ  : 4 as 4,
   GTE : 5 as 5, // GT | EQ
   LTE : 6 as 6, // LT | EQ
   ALL : 7 as 7  // GT | LT | EQ
@@ -163,18 +167,10 @@ export class MultiTrustCredentialHelper {
     opts?: Partial<Omit<DeployViaFactoryOptions, 'contractType' | 'implABI' | 'initArgs' | 'signer'>>
   ): Promise<DeployResult> {
     
-    if (!args?.verifier) {
-      const provider = signer.provider;
-      if (!provider) throw new Error('Signer must have a provider');
-      
-      const chainId  = Number((await provider.getNetwork()).chainId);
-      args.verifier = DEFAULT_VERIFIER_ADDRESSES[chainId];
-    }
-
     const res = await deployViaFactory({
       contractType : MTC.contractType,
       implABI      : MTC.abi,
-      initArgs     : [ args.admin, args.verifier, args.trustedForwarders ?? [] ],
+      initArgs     : [ args.admin, args.trustedForwarders ?? [] ],
       signer,
       ...(opts ?? {}),
     });
@@ -254,10 +250,11 @@ export class MultiTrustCredentialHelper {
    */
   async mint(to: Address, input: MetricInputStruct): Promise<TransactionReceipt> {
     const payload = {
-      metricId: toBytes32(input.metricId),
-      value   : input.value,
-      leafFull: input.leafFull,
-      uri     : input.uri ?? ''
+      metricId : toBytes32(input.metricId),
+      value    : input.value,
+      leafFull : input.leafFull,
+      uri      : input.uri ?? '',
+      expiresAt: input.expiresAt ?? 0
     };
     const tx = await this.contract.mint(to, payload);
     return tx.wait();
@@ -273,11 +270,12 @@ export class MultiTrustCredentialHelper {
    */
   async mintBatch(arr: MintItemStruct[]): Promise<TransactionReceipt> {
     const payload = arr.map(i => ({
-      to      : i.to,
-      metricId: toBytes32(i.metricId),
-      value   : i.value,
-      leafFull: i.leafFull,
-      uri     : i.uri ?? ''
+      to       : i.to,
+      metricId : toBytes32(i.metricId),
+      value    : i.value,
+      leafFull : i.leafFull,
+      uri      : i.uri ?? '',
+      expiresAt: i.expiresAt ?? 0
     }));
     const tx = await this.contract.mintBatch(payload);
     return tx.wait();
@@ -297,7 +295,7 @@ export class MultiTrustCredentialHelper {
       metricId: toBytes32(upd.metricId),
       newValue: upd.newValue,
       leafFull: upd.leafFull,
-      deadline: upd.deadline
+      expiresAt: upd.expiresAt ?? 0
     };
     const tx = await this.contract.updateMetric(tokenId, payload);
     return tx.wait();
@@ -316,7 +314,8 @@ export class MultiTrustCredentialHelper {
       tokenId : i.tokenId,
       metricId: toBytes32(i.metricId),
       newValue: i.newValue,
-      leafFull: i.leafFull
+      leafFull: i.leafFull,
+      expiresAt: i.expiresAt ?? 0
     }));
     const tx = await this.contract.updateMetricBatch(payload);
     return tx.wait();
@@ -325,6 +324,32 @@ export class MultiTrustCredentialHelper {
   /* ================================================================ */
   /* 4) Proof / Moderation                                            */
   /* ================================================================ */
+
+  async updateVerifier(_verifier?: Address): Promise<TransactionReceipt> {
+    let verifier;
+    if (!_verifier) {
+      const provider = this.runner.provider;
+      if (!provider) throw new Error('Signer must have a provider');
+      
+      const chainId  = Number((await provider.getNetwork()).chainId);
+      verifier = DEFAULT_VERIFIER_ADDRESSES[chainId].default;
+    }
+    const tx = await this.contract.updateVerifier(verifier);
+    return tx.wait();
+  }
+
+  async updateGroupVerifier(_verifier?: Address): Promise<TransactionReceipt> {
+    let verifier;
+    if (!_verifier) {
+      const provider = this.runner.provider;
+      if (!provider) throw new Error('Signer must have a provider');
+      
+      const chainId  = Number((await provider.getNetwork()).chainId);
+      verifier = DEFAULT_VERIFIER_ADDRESSES[chainId].group;
+    }
+    const tx = await this.contract.updateGroupVerifier(verifier);
+    return tx.wait();
+  }
 
   /** Verify a zk proof against stored metric / mask rules.
    *  @returns bool (true if verifier returns true and on-chain checks pass).
@@ -348,6 +373,21 @@ export class MultiTrustCredentialHelper {
     pubSignals: readonly [bigint, bigint, bigint, bigint, bigint, bigint]
   ): Promise<boolean> {
     return this.contract.proveMetric(
+      tokenId,
+      toBytes32(metricId),
+      a, b, c, pubSignals
+    ) as Promise<boolean>;
+  }
+
+  async proveGroupMetric(
+    tokenId: bigint,
+    metricId: Bytes32 | string,
+    a: readonly [string, string],
+    b: readonly [[string, string], [string, string]],
+    c: readonly [string, string],
+    pubSignals: readonly [bigint, bigint, bigint, bigint, bigint, bigint]
+  ): Promise<boolean> {
+    return this.contract.proveGroupMetric(
       tokenId,
       toBytes32(metricId),
       a, b, c, pubSignals
@@ -413,6 +453,11 @@ export class MultiTrustCredentialHelper {
   /** Current zk verifier address (public variable). */
   async verifier(): Promise<Address> {
     return (await this.contract.verifier()) as Address;
+  }
+
+  /** Current zk group verifier address (public variable). */
+  async gVerifier(): Promise<Address> {
+    return (await this.contract.gVerifier()) as Address;
   }
 
   /* ================================================================ */
