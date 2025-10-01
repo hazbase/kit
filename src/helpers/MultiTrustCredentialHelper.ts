@@ -91,10 +91,12 @@ export interface UpdateItemStruct {
 export const CompareMask = {
   GT  : 1 << 0 as 1,
   LT  : 1 << 1 as 2,
-  EQ  : 1 << 2 as 3, // GT | LT
+  EQ  : 1 << 2 as 4,
   IN  : 1 << 3 as 8,
   
   NONE: 0 as 0,
+  
+  NEQ : 3 as 3, // GT | LT
   GTE : 5 as 5, // GT | EQ
   LTE : 6 as 6, // LT | EQ
   ALL : 7 as 7  // GT | LT | EQ
