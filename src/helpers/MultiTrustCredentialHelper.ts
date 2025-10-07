@@ -333,7 +333,7 @@ export class MultiTrustCredentialHelper {
       const provider = this.runner.provider;
       if (!provider) throw new Error('Signer must have a provider');
       
-      const chainId  = Number((await provider.getNetwork()).chainId);
+      const chainId = Number((await provider.getNetwork()).chainId);
       verifier = DEFAULT_VERIFIER_ADDRESSES[chainId].default;
     }
     const tx = await this.contract.updateVerifier(verifier);
@@ -346,7 +346,7 @@ export class MultiTrustCredentialHelper {
       const provider = this.runner.provider;
       if (!provider) throw new Error('Signer must have a provider');
       
-      const chainId  = Number((await provider.getNetwork()).chainId);
+      const chainId = Number((await provider.getNetwork()).chainId);
       verifier = DEFAULT_VERIFIER_ADDRESSES[chainId].group;
     }
     const tx = await this.contract.updateGroupVerifier(verifier);
