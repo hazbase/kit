@@ -79,6 +79,37 @@ export interface MintVoucher {
   nonce: BigNumberish;
 }
 
+export type AmountLike = PromiseLike<bigint> & {
+  /** Returns raw bigint (smallest unit). */
+  raw(): Promise<bigint>;
+  /** Returns human-readable string using token decimals. */
+  format(): Promise<string>;
+}
+
+class AmountResult implements AmountLike {
+  constructor(
+    private readonly helper: FlexibleTokenHelper,
+    private readonly rawPromise: Promise<bigint>,
+  ) {}
+
+  // Make await resolve to raw bigint
+  then<TResult1 = bigint, TResult2 = never>(
+    onfulfilled?: ((value: bigint) => TResult1 | PromiseLike<TResult1>) | null,
+    onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | null
+  ): Promise<TResult1 | TResult2> {
+    return this.rawPromise.then(onfulfilled as any, onrejected as any);
+  }
+
+  raw(): Promise<bigint> {
+    return this.rawPromise;
+  }
+
+  async format(): Promise<string> {
+    const raw = await this.rawPromise;
+    return this.helper.format(raw);
+  }
+}
+
 /* ------------------------------------------------------------------ */
 /*                            EIP-712 Types                            */
 /* ------------------------------------------------------------------ */
@@ -111,6 +142,10 @@ export class FlexibleTokenHelper {
   readonly address : Address;
   readonly contract: ethers.Contract;
   readonly runner  : ContractRunner;
+  
+  private _decimals?: number;
+  private _symbol?: string;
+  private _metaInit?: Promise<void>;
 
   /** Internal constructor; prefer `attach` or `deploy`. */
   private constructor(address: Address, runner: ContractRunner) {
@@ -119,8 +154,12 @@ export class FlexibleTokenHelper {
     this.contract = new ethers.Contract(this.address, FT.abi as InterfaceAbi, runner);
   }
 
+  private amountOf(p: Promise<bigint>): AmountLike {
+    return new AmountResult(this, p);
+  }
+
   /* ================================================================ */
-  /* 1) Deploy / Attach / Connect                                      */
+  /* Deploy / Attach / Connect                                      */
   /* ================================================================ */
 
   /** Deploy a new FlexibleToken proxy and return a connected helper.
@@ -135,6 +174,10 @@ export class FlexibleTokenHelper {
     signer: ethers.Signer,
     opts?: Partial<Omit<DeployViaFactoryOptions, "contractType" | "implABI" | "initArgs" | "signer">>,
   ): Promise<DeployResult> {
+    
+    args.initialSupply = ethers.parseUnits(args.initialSupply.toString(), args.decimals)
+    args.cap = ethers.parseUnits(args.cap.toString(), args.decimals)
+
     const res = await deployViaFactory({
       contractType : FT.contractType, // e.g., "FlexibleToken"
       implABI      : FT.abi,
@@ -178,7 +221,7 @@ export class FlexibleTokenHelper {
   }
 
   /* ================================================================ */
-  /* 2) Mint / Burn                                                    */
+  /* Mint / Burn                                                    */
   /* ================================================================ */
 
   /** Mint tokens to `to` (MINTER_ROLE required, whenNotPaused).
@@ -200,6 +243,16 @@ export class FlexibleTokenHelper {
    */
   async batchMint(to: readonly Address[], amounts: readonly BigNumberish[]): Promise<TransactionReceipt> {
     const tx = await this.contract.batchMint(to, amounts);
+    return tx.wait();
+  }
+
+  async transfer(to: string, amount: BigNumberish) {
+    const tx = await this.contract.transfer(to, amount);
+    return tx.wait();
+  }
+
+  async approve(spender: string, amount: BigNumberish) {
+    const tx = await this.contract.approve(spender, amount);
     return tx.wait();
   }
 
@@ -226,7 +279,7 @@ export class FlexibleTokenHelper {
   }
 
   /* ================================================================ */
-  /* 3) Voucher (EIP-712)                                              */
+  /* Voucher (EIP-712)                                              */
   /* ================================================================ */
 
   /** Redeem an off-chain signed MintVoucher (nonReentrant, whenNotPaused).
@@ -309,7 +362,7 @@ export class FlexibleTokenHelper {
   }
 
   /* ================================================================ */
-  /* 4) Admin: Cap / Whitelist / Pause                                */
+  /* Admin: Cap / Whitelist / Pause                                */
   /* ================================================================ */
 
   /** Update the cap; 0 means unlimited (ADMIN_ROLE).
@@ -351,7 +404,7 @@ export class FlexibleTokenHelper {
   }
 
   /* ================================================================ */
-  /* 5) ERC20Votes & Permit conveniences                               */
+  /* ERC20Votes & Permit conveniences                               */
   /* ================================================================ */
 
   /** Delegate voting power to `delegatee`. 
@@ -386,18 +439,21 @@ export class FlexibleTokenHelper {
   }
 
   /** Current votes for `account` (latest checkpoint). */
-  async getVotes(account: Address): Promise<bigint> {
-    return BigInt(await this.contract.getVotes(account));
+  getVotes(account: Address): AmountLike {
+    const p = this.contract.getVotes(account) as Promise<bigint>;
+    return this.amountOf(p);
   }
 
   /** Past votes for `account` at `blockNumber`. */
-  async getPastVotes(account: Address, blockNumber: BigNumberish): Promise<bigint> {
-    return BigInt(await this.contract.getPastVotes(account, blockNumber));
+  getPastVotes(account: Address, blockNumber: BigNumberish): AmountLike {
+    const p = this.contract.getPastVotes(account, blockNumber) as Promise<bigint>;
+    return this.amountOf(p);
   }
 
   /** Past total supply at `blockNumber` (for quorum calculations). */
-  async getPastTotalSupply(blockNumber: BigNumberish): Promise<bigint> {
-    return BigInt(await this.contract.getPastTotalSupply(blockNumber));
+  getPastTotalSupply(blockNumber: BigNumberish): AmountLike {
+    const p = this.contract.getPastTotalSupply(blockNumber) as Promise<bigint>;
+    return this.amountOf(p);
   }
 
   /** ERC20 Permit (EIP-2612) approval with signature.
@@ -419,16 +475,52 @@ export class FlexibleTokenHelper {
 
   /** Current nonce for `owner` (required for permit). */
   async nonces(owner: Address): Promise<bigint> {
-    return BigInt(await this.contract.nonces(owner));
+    return this.contract.nonces(owner);
   }
 
   /* ================================================================ */
-  /* 6) Views                                                          */
+  /* Utils                                                            */
+  /* ================================================================ */
+
+  /** Lazily loads and memoizes token metadata (decimals/symbol). */
+  private async ensureMeta(): Promise<void> {
+    if (this._metaInit) return this._metaInit;
+    this._metaInit = (async () => {
+      // Guard against non-standard tokens: fallback to 18
+      try {
+        this._decimals = Number(await this.contract.decimals());
+        if (!Number.isFinite(this._decimals)) this._decimals = 18;
+      } catch {
+        this._decimals = 18;
+      }
+      try {
+        this._symbol = await this.contract.symbol();
+      } catch {
+        this._symbol = undefined;
+      }
+    })();
+    return this._metaInit;
+  }
+
+  async format(amountRaw: bigint | string): Promise<string> {
+    await this.ensureMeta();
+    return ethers.formatUnits(amountRaw, this._decimals!);
+  }
+
+  /** Parses a human-readable amount (e.g., "1.5") to a raw on-chain integer. */
+  async parse(amountHuman: string | number): Promise<bigint> {
+    await this.ensureMeta();
+    return ethers.parseUnits(String(amountHuman), this._decimals!);
+  }
+
+  /* ================================================================ */
+  /* Views                                                            */
   /* ================================================================ */
 
   /** Max total supply; 0 means unlimited. */
-  async cap(): Promise<bigint> {
-    return BigInt(await this.contract.cap());
+  cap(): AmountLike {
+    const p = this.contract.cap() as Promise<bigint>;
+    return this.amountOf(p);
   }
 
   /** Soul-bound mode flag; false disables normal transfers. */
@@ -454,20 +546,33 @@ export class FlexibleTokenHelper {
   /** ERC-20 name. */
   async name(): Promise<string> { return this.contract.name() as Promise<string>; }
   /** ERC-20 symbol. */
-  async symbol(): Promise<string> { return this.contract.symbol() as Promise<string>; }
+  async symbol(): Promise<string | undefined> {
+    await this.ensureMeta();
+    return this._symbol;
+  }
   /** ERC-20 decimals. */
-  async decimals(): Promise<number> { return Number(await this.contract.decimals()); }
+  async decimals(): Promise<number> {
+    await this.ensureMeta();
+    return this._decimals!;
+  }
   /** Total token supply. */
-  async totalSupply(): Promise<bigint> { return BigInt(await this.contract.totalSupply()); }
+  totalSupply(): AmountLike {
+    const p = this.contract.totalSupply() as Promise<bigint>;
+    return this.amountOf(p);
+  }
   /** Balance of `account`. */
-  async balanceOf(account: Address): Promise<bigint> { return BigInt(await this.contract.balanceOf(account)); }
+  balanceOf(account: string): AmountLike {
+    const p = this.contract.balanceOf(account) as Promise<bigint>;
+    return this.amountOf(p);
+  }
   /** Allowance from `owner` to `spender`. */
-  async allowance(owner: Address, spender: Address): Promise<bigint> {
-    return BigInt(await this.contract.allowance(owner, spender));
+  allowance(owner: Address, spender: Address): AmountLike {
+    const p = this.contract.allowance(owner, spender) as Promise<bigint>;
+    return this.amountOf(p);
   }
 
   /* ================================================================ */
-  /* 7) Event Queries (optional conveniences)                          */
+  /* Event Queries (optional conveniences)                          */
   /* ================================================================ */
 
   /** Query `CapChanged(oldCap,newCap)` events within a block range. */
