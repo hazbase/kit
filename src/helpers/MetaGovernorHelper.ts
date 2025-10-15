@@ -90,6 +90,8 @@ export class MetaGovernorHelper {
   readonly contract: ethers.Contract;
   readonly runner  : ContractRunner;
 
+  public static ProposalType = ProposalType;
+
   /** Internal constructor; prefer `attach` or `deploy`. */
   private constructor(address: Address, runner: ContractRunner) {
     this.address  = ethers.getAddress(address) as Address;

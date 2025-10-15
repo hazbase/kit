@@ -76,6 +76,13 @@ export enum Origin {
   Meta = 1,
 }
 
+export const SupportType = {
+  Against : 0,
+  For     : 1,
+  Abstain : 2,
+} as const;
+export type SupportTypeKey = keyof typeof SupportType;
+
 /* ------------------------------------------------------------------ */
 /*                               Events                                */
 /* ------------------------------------------------------------------ */
@@ -96,6 +103,8 @@ export class GenericGovernorHelper {
   readonly address: Address;
   readonly contract: ethers.Contract;
   readonly runner: ContractRunner;
+
+  public static SupportType = SupportType;
 
   /** Internal constructor; prefer `attach` or `deploy`. */
   private constructor(address: Address, runner: ContractRunner) {
