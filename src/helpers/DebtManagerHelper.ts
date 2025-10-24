@@ -94,6 +94,10 @@ export interface TrancheInfo {
   putPriceBps: number;
 }
 
+export interface OptionalArgs {
+  abi?: InterfaceAbi
+}
+
 /** Coupon metadata (no snapshot fields; see notes) */
 export interface CouponMeta {
   /** Coupon due timestamp (unix) */
@@ -138,16 +142,15 @@ export class DebtManagerHelper {
   readonly address: Address;
   readonly contract: ethers.Contract;
   readonly runner: ContractRunner;
+  readonly ops     : OptionalArgs | undefined;
 
   /** Internal constructor; prefer `attach` or `deploy`. */
-  private constructor(address: Address, runner: ContractRunner) {
+  private constructor(address: Address, runner: ContractRunner, ops?: OptionalArgs) {
     this.address = ethers.getAddress(address) as Address;
     this.runner = runner;
-    this.contract = new ethers.Contract(
-      this.address,
-      DebtManager.abi as InterfaceAbi,
-      runner
-    );
+
+    this.ops = ops;
+    this.contract = new ethers.Contract(this.address, ops?.abi? [...DebtManager.abi, ...ops.abi]: DebtManager.abi, runner);
   }
 
   /* ===================== Deploy / Attach / Connect ================= */
@@ -186,11 +189,8 @@ export class DebtManagerHelper {
    *  @param runner  Signer or provider for execution context.
    *  @returns       Connected helper instance.
    */
-  static attach(
-    address: Address,
-    runner: ContractRunner | ethers.Signer
-  ): DebtManagerHelper {
-    return new DebtManagerHelper(address, runner);
+  static attach(address: Address, runner: ContractRunner, ops?: OptionalArgs): DebtManagerHelper {
+    return new DebtManagerHelper(address, runner, ops);
   }
 
   /** Return a new helper bound to a different signer/runner.
@@ -198,9 +198,9 @@ export class DebtManagerHelper {
    *  @param runner New signer or provider.
    *  @returns      New helper targeting the same address.
    */
-  connect(runner: ContractRunner | ethers.Signer): DebtManagerHelper {
+  connect(runner: ContractRunner): DebtManagerHelper {
     if (runner === this.runner) return this;
-    return new DebtManagerHelper(this.address, runner);
+    return new DebtManagerHelper(this.address, runner, this.ops);
   }
 
   /* ========================= Issuer (Admin) ======================== */

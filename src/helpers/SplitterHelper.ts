@@ -31,6 +31,9 @@ import {
 /*                              Types                                  */
 /* ------------------------------------------------------------------ */
 
+/** Canonical 20-byte address string. */
+export type Address = string;
+
 /** Route struct mirror: destination and share in basis points (1–10,000). */
 export interface Route { dest: string; bps: number; }
 
@@ -39,6 +42,10 @@ export interface DeployResult {
   address: string;                    // Proxy address (use res.address, not res.proxy)
   receipt: TransactionReceipt;        // Deployment/initialize tx receipt
   helper : SplitterHelper;            // Connected helper
+}
+
+export interface OptionalArgs {
+  abi?: InterfaceAbi
 }
 
 /* ------------------------------------------------------------------ */
@@ -65,12 +72,15 @@ export class SplitterHelper {
   readonly address : string;
   readonly contract: ethers.Contract;
   readonly runner  : ContractRunner;
+  readonly ops     : OptionalArgs | undefined;
 
   /** Internal constructor; prefer `attach` or `deploy`. */
-  private constructor(address: string, runner: ContractRunner) {
+  private constructor(address: Address, runner: ContractRunner, ops?: OptionalArgs) {
     this.address  = ethers.getAddress(address);
     this.runner   = runner;
-    this.contract = new ethers.Contract(this.address, Splitter.abi as InterfaceAbi, runner);
+
+    this.ops = ops;
+    this.contract = new ethers.Contract(this.address, ops?.abi? [...Splitter.abi, ...ops.abi]: Splitter.abi, runner);
   }
 
   /* ================================================================ */
@@ -110,14 +120,14 @@ export class SplitterHelper {
   }
 
   /** Attach to an existing Splitter at `address`. */
-  static attach(address: string, runner: ContractRunner | ethers.Signer): SplitterHelper {
-    return new SplitterHelper(address, runner);
+  static attach(address: Address, runner: ContractRunner, ops?: OptionalArgs): SplitterHelper {
+    return new SplitterHelper(address, runner, ops);
   }
 
   /** Return a new helper bound to a different runner/signer. */
-  connect(runner: ContractRunner | ethers.Signer): SplitterHelper {
+  connect(runner: ContractRunner): SplitterHelper {
     if (runner === this.runner) return this;
-    return new SplitterHelper(this.address, runner);
+    return new SplitterHelper(this.address, runner, this.ops);
   }
 
   /* ================================================================ */

@@ -70,6 +70,10 @@ export interface ProposalDetails {
   description: string;
 }
 
+export interface OptionalArgs {
+  abi?: InterfaceAbi
+}
+
 /** Enum mirror of `Origin` in .sol (proposalOrigin mapping) */
 export enum Origin {
   Standalone = 0,
@@ -100,21 +104,20 @@ const EVT = {
 /* ------------------------------------------------------------------ */
 
 export class GenericGovernorHelper {
-  readonly address: Address;
+  readonly address : Address;
   readonly contract: ethers.Contract;
-  readonly runner: ContractRunner;
+  readonly runner  : ContractRunner;
+  readonly ops     : OptionalArgs | undefined;
 
   public static SupportType = SupportType;
 
   /** Internal constructor; prefer `attach` or `deploy`. */
-  private constructor(address: Address, runner: ContractRunner) {
+  private constructor(address: Address, runner: ContractRunner, ops?: OptionalArgs) {
     this.address = ethers.getAddress(address) as Address;
     this.runner = runner;
-    this.contract = new ethers.Contract(
-      this.address,
-      GenericGovernor.abi as InterfaceAbi,
-      runner
-    );
+
+    this.ops = ops;
+    this.contract = new ethers.Contract(this.address, ops?.abi? [...GenericGovernor.abi, ...ops.abi]: GenericGovernor.abi, runner);
   }
 
   /* ================================================================ */
@@ -152,17 +155,14 @@ export class GenericGovernorHelper {
   }
 
   /** Attach to an existing Governor proxy at `address`. */
-  static attach(
-    address: Address,
-    runner: ContractRunner | ethers.Signer
-  ): GenericGovernorHelper {
-    return new GenericGovernorHelper(address, runner);
+  static attach(address: Address, runner: ContractRunner, ops?: OptionalArgs): GenericGovernorHelper {
+    return new GenericGovernorHelper(address, runner, ops);
   }
 
   /** Return a new helper bound to a different signer/runner. */
-  connect(runner: ContractRunner | ethers.Signer): GenericGovernorHelper {
+  connect(runner: ContractRunner): GenericGovernorHelper {
     if (runner === this.runner) return this;
-    return new GenericGovernorHelper(this.address, runner);
+    return new GenericGovernorHelper(this.address, runner, this.ops);
   }
 
   /* ================================================================ */

@@ -84,6 +84,10 @@ export interface UpdateItemStruct {
   expiresAt?: bigint;
 }
 
+export interface OptionalArgs {
+  abi?: InterfaceAbi
+}
+
 /* ------------------------------------------------------------------ */
 /*                         Compare Mask (bit flags)                    */
 /* ------------------------------------------------------------------ */
@@ -146,14 +150,17 @@ export class MultiTrustCredentialHelper {
   readonly address : Address;
   readonly contract: ethers.Contract;
   readonly runner  : ContractRunner;
+  readonly ops     : OptionalArgs | undefined;
 
   public static CompareMask = CompareMask;
 
   /** Internal constructor; prefer `attach` or `deploy`. */
-  private constructor(address: Address, runner: ContractRunner) {
+  private constructor(address: Address, runner: ContractRunner, ops?: OptionalArgs) {
     this.address  = ethers.getAddress(address) as Address;
     this.runner   = runner;
-    this.contract = new ethers.Contract(this.address, MTC.abi as InterfaceAbi, runner);
+
+    this.ops = ops;
+    this.contract = new ethers.Contract(this.address, ops?.abi? [...MTC.abi, ...ops.abi]: MTC.abi, runner);
   }
 
   /* ================================================================ */
@@ -182,14 +189,14 @@ export class MultiTrustCredentialHelper {
   }
 
   /** Attach an existing MTC at `address`. */
-  static attach(addr: Address, runner: ContractRunner | ethers.Signer): MultiTrustCredentialHelper {
-    return new MultiTrustCredentialHelper(addr, runner);
+  static attach(address: Address, runner: ContractRunner, ops?: OptionalArgs): MultiTrustCredentialHelper {
+    return new MultiTrustCredentialHelper(address, runner, ops);
   }
 
   /** Return a new helper bound to a different runner/signer. */
-  connect(runner: ContractRunner | ethers.Signer): MultiTrustCredentialHelper {
+  connect(runner: ContractRunner): MultiTrustCredentialHelper {
     if (runner === this.runner) return this;
-    return new MultiTrustCredentialHelper(this.address, runner);
+    return new MultiTrustCredentialHelper(this.address, runner, this.ops);
   }
 
   /* ================================================================ */

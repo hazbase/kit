@@ -55,6 +55,10 @@ export interface MetricUpdate {
   deadline: bigint;                // uint256 (epoch seconds)
 }
 
+export interface OptionalArgs {
+  abi?: InterfaceAbi
+}
+
 /* ------------------------------------------------------------------ */
 /*                         Compare Mask                                */
 /* ------------------------------------------------------------------ */
@@ -142,12 +146,15 @@ export class KpiRegistryHelper {
   readonly address : string;
   readonly contract: ethers.Contract;
   readonly runner  : ContractRunner;
+  readonly ops     : OptionalArgs | undefined;
 
   /** Internal constructor; use `attach` or `deploy`. */
-  private constructor(address: string, runner: ContractRunner) {
+  private constructor(address: Address, runner: ContractRunner, ops?: OptionalArgs) {
     this.address  = address;
     this.runner   = runner;
-    this.contract = new ethers.Contract(address, KpiRegistry.abi as InterfaceAbi, runner);
+
+    this.ops = ops;
+    this.contract = new ethers.Contract(this.address, ops?.abi? [...KpiRegistry.abi, ...ops.abi]: KpiRegistry.abi, runner);
   }
 
   /* ================================================================ */
@@ -155,14 +162,14 @@ export class KpiRegistryHelper {
   /* ================================================================ */
 
   /** Attach an existing KpiRegistry at `address`. */
-  static attach(address: string, runner: ContractRunner): KpiRegistryHelper {
-    return new KpiRegistryHelper(address, runner);
+  static attach(address: Address, runner: ContractRunner, ops?: OptionalArgs): KpiRegistryHelper {
+    return new KpiRegistryHelper(address, runner, ops);
   }
 
   /** Return a new helper with a different signer/runner. */
-  connect(runner: ContractRunner | ethers.Signer): KpiRegistryHelper {
+  connect(runner: ContractRunner): KpiRegistryHelper {
     if (runner === this.runner) return this;
-    return new KpiRegistryHelper(this.address, runner);
+    return new KpiRegistryHelper(this.address, runner, this.ops);
   }
 
   /** Deploy a new KpiRegistry proxy via your factory helper.

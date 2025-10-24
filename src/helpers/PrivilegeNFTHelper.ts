@@ -67,6 +67,10 @@ export interface MintVoucher {
   to: Address;
 }
 
+export interface OptionalArgs {
+  abi?: InterfaceAbi
+}
+
 /* ------------------------------------------------------------------ */
 /*                         EIP-712 Definitions                         */
 /* ------------------------------------------------------------------ */
@@ -108,12 +112,15 @@ export class PrivilegeNFTHelper {
   readonly address : Address;
   readonly contract: ethers.Contract;
   readonly runner  : ContractRunner;
+  readonly ops     : OptionalArgs | undefined;
 
   /** Internal constructor; prefer `attach` or `deploy`. */
-  private constructor(address: Address, runner: ContractRunner) {
+  private constructor(address: Address, runner: ContractRunner, ops?: OptionalArgs) {
     this.address  = ethers.getAddress(address) as Address;
     this.runner   = runner;
-    this.contract = new ethers.Contract(this.address, PrivilegeNFT.abi as InterfaceAbi, runner);
+
+    this.ops = ops;
+    this.contract = new ethers.Contract(this.address, ops?.abi? [...PrivilegeNFT.abi, ...ops.abi]: PrivilegeNFT.abi, runner);
   }
 
   /* ================================================================ */
@@ -156,8 +163,8 @@ export class PrivilegeNFTHelper {
    *  @param runner  Signer or provider context.
    *  @returns       Connected helper instance.
    */
-  static attach(address: Address, runner: ContractRunner | ethers.Signer): PrivilegeNFTHelper {
-    return new PrivilegeNFTHelper(address, runner);
+  static attach(address: Address, runner: ContractRunner, ops?: OptionalArgs): PrivilegeNFTHelper {
+    return new PrivilegeNFTHelper(address, runner, ops);
   }
 
   /** Return a new helper bound to a different signer/runner.
@@ -165,9 +172,9 @@ export class PrivilegeNFTHelper {
    *  @param runner New signer or provider.
    *  @returns      New helper targeting the same address.
    */
-  connect(runner: ContractRunner | ethers.Signer): PrivilegeNFTHelper {
+  connect(runner: ContractRunner): PrivilegeNFTHelper {
     if (runner === this.runner) return this;
-    return new PrivilegeNFTHelper(this.address, runner);
+    return new PrivilegeNFTHelper(this.address, runner, this.ops);
   }
 
   /* ================================================================ */

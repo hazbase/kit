@@ -133,6 +133,10 @@ export interface OfferArgs {
   delegatedTo?: Address;
 }
 
+export interface OptionalArgs {
+  abi?: InterfaceAbi
+}
+
 /* ------------------------------------------------------------------ */
 /*                         EIP-712 Definitions                         */
 /* ------------------------------------------------------------------ */
@@ -184,12 +188,15 @@ export class AgreementManagerHelper {
   readonly address : Address;
   readonly contract: ethers.Contract;
   readonly runner  : ContractRunner;
+  readonly ops     : OptionalArgs | undefined;
 
   /** Internal constructor; prefer `attach` or `deploy`. */
-  private constructor(address: Address, runner: ContractRunner) {
+  private constructor(address: Address, runner: ContractRunner, ops?: OptionalArgs) {
     this.address  = ethers.getAddress(address) as Address;
     this.runner   = runner;
-    this.contract = new ethers.Contract(this.address, Agreement.abi as InterfaceAbi, runner);
+
+    this.ops = ops;
+    this.contract = new ethers.Contract(this.address, ops?.abi? [...Agreement.abi, ...ops.abi]: Agreement.abi, runner);
   }
 
   /* ================================================================ */
@@ -225,8 +232,8 @@ export class AgreementManagerHelper {
    *  @param runner  Signer or provider context.
    *  @returns       Connected helper instance.
    */
-  static attach(address: Address, runner: ContractRunner | ethers.Signer): AgreementManagerHelper {
-    return new AgreementManagerHelper(address, runner);
+  static attach(address: Address, runner: ContractRunner, ops?: OptionalArgs): AgreementManagerHelper {
+    return new AgreementManagerHelper(address, runner, ops);
   }
 
   /** Return a new helper bound to a different signer/runner.
@@ -234,9 +241,9 @@ export class AgreementManagerHelper {
    *  @param runner New signer or provider.
    *  @returns      New helper instance pointing to the same contract.
    */
-  connect(runner: ContractRunner | ethers.Signer): AgreementManagerHelper {
+  connect(runner: ContractRunner): AgreementManagerHelper {
     if (runner === this.runner) return this;
-    return new AgreementManagerHelper(this.address, runner);
+    return new AgreementManagerHelper(this.address, runner, this.ops);
   }
 
   /* ================================================================ */

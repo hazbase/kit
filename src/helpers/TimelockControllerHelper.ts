@@ -45,6 +45,10 @@ export interface DeployResult {
   helper: TimelockControllerHelper;
 }
 
+export interface OptionalArgs {
+  abi?: InterfaceAbi
+}
+
 /** Operation state enum (must match OZ `OperationState`). */
 export enum OperationState {
   Unset   = 0,
@@ -76,16 +80,15 @@ export class TimelockControllerHelper {
   readonly address : Address;
   readonly contract: ethers.Contract;
   readonly runner  : ContractRunner;
+  readonly ops     : OptionalArgs | undefined;
 
   /** Internal constructor; use `attach` or `deploy`. */
-  private constructor(address: Address, runner: ContractRunner) {
+  private constructor(address: Address, runner: ContractRunner, ops?: OptionalArgs) {
     this.address  = ethers.getAddress(address) as Address;
     this.runner   = runner;
-    this.contract = new ethers.Contract(
-      this.address,
-      TimelockController.abi as InterfaceAbi,
-      runner
-    );
+
+    this.ops = ops;
+    this.contract = new ethers.Contract(this.address, ops?.abi? [...TimelockController.abi, ...ops.abi]: TimelockController.abi, runner);
   }
 
   /* ================================================================ */
@@ -116,14 +119,14 @@ export class TimelockControllerHelper {
   }
 
   /** Attach to an existing TimelockController at `address`. */
-  static attach(address: Address, runner: ContractRunner | ethers.Signer) {
-    return new TimelockControllerHelper(address, runner);
+  static attach(address: Address, runner: ContractRunner, ops?: OptionalArgs) {
+    return new TimelockControllerHelper(address, runner, ops);
   }
 
   /** Return a new helper bound to a different signer/runner. */
-  connect(runner: ContractRunner | ethers.Signer): TimelockControllerHelper {
+  connect(runner: ContractRunner): TimelockControllerHelper {
     if (runner === this.runner) return this;
-    return new TimelockControllerHelper(this.address, runner);
+    return new TimelockControllerHelper(this.address, runner, this.ops);
   }
 
   /* ================================================================ */

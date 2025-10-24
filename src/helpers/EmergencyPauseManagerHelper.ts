@@ -45,6 +45,10 @@ export interface DeployArgs {
   forwarders : readonly Address[];  // ERC-2771 trusted forwarders
 }
 
+export interface OptionalArgs {
+  abi?: InterfaceAbi
+}
+
 /* ------------------------------------------------------------------ */
 /*                             Events                                  */
 /* ------------------------------------------------------------------ */
@@ -66,12 +70,15 @@ export class EmergencyPauseManagerHelper {
   readonly address : Address;
   readonly contract: ethers.Contract;
   readonly runner  : ContractRunner;
+  readonly ops     : OptionalArgs | undefined;
 
   /** Internal constructor; prefer `attach` or `deploy`. */
-  private constructor(address: Address, runner: ContractRunner) {
+  private constructor(address: Address, runner: ContractRunner, ops?: OptionalArgs) {
     this.address  = ethers.getAddress(address) as Address;
     this.runner   = runner;
-    this.contract = new ethers.Contract(this.address, EPM.abi as InterfaceAbi, runner);
+
+    this.ops = ops;
+    this.contract = new ethers.Contract(this.address, ops?.abi? [...EPM.abi, ...ops.abi]: EPM.abi, runner);
   }
 
   /* ================================================================ */
@@ -99,14 +106,14 @@ export class EmergencyPauseManagerHelper {
   }
 
   /** Attach an existing EmergencyPauseManager at `address`. */
-  static attach(address: Address, runner: ContractRunner | ethers.Signer): EmergencyPauseManagerHelper {
-    return new EmergencyPauseManagerHelper(address, runner);
+  static attach(address: Address, runner: ContractRunner, ops?: OptionalArgs): EmergencyPauseManagerHelper {
+    return new EmergencyPauseManagerHelper(address, runner, ops);
   }
 
   /** Return a new helper bound to a different runner/signer. */
-  connect(runner: ContractRunner | ethers.Signer): EmergencyPauseManagerHelper {
+  connect(runner: ContractRunner): EmergencyPauseManagerHelper {
     if (runner === this.runner) return this;
-    return new EmergencyPauseManagerHelper(this.address, runner);
+    return new EmergencyPauseManagerHelper(this.address, runner, this.ops);
   }
 
   /* ================================================================ */

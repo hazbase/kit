@@ -114,6 +114,10 @@ export interface Voucher {
   seller: Address;
 }
 
+export interface OptionalArgs {
+  abi?: InterfaceAbi
+}
+
 /* ------------------------------------------------------------------ */
 /*                         EIP-712 definitions                         */
 /* ------------------------------------------------------------------ */
@@ -170,12 +174,15 @@ export class MarketManagerHelper {
   readonly address : Address;
   readonly contract: ethers.Contract;
   readonly runner  : ContractRunner;
+  readonly ops     : OptionalArgs | undefined;
 
   /** Internal constructor; prefer `attach` or `deploy`. */
-  private constructor(address: Address, runner: ContractRunner) {
+  private constructor(address: Address, runner: ContractRunner, ops?: OptionalArgs) {
     this.address  = ethers.getAddress(address) as Address;
     this.runner   = runner;
-    this.contract = new ethers.Contract(this.address, Market.abi as InterfaceAbi, runner);
+
+    this.ops = ops;
+    this.contract = new ethers.Contract(this.address, ops?.abi? [...Market.abi, ...ops.abi]: Market.abi, runner);
   }
 
   /* ================================================================ */
@@ -212,8 +219,8 @@ export class MarketManagerHelper {
    *  @param runner  Signer or provider context.
    *  @returns       Connected helper instance.
    */
-  static attach(address: Address, runner: ContractRunner | ethers.Signer): MarketManagerHelper {
-    return new MarketManagerHelper(address, runner);
+  static attach(address: Address, runner: ContractRunner, ops?: OptionalArgs): MarketManagerHelper {
+    return new MarketManagerHelper(address, runner, ops);
   }
 
   /** Return a new helper bound to a different signer/runner.
@@ -221,9 +228,9 @@ export class MarketManagerHelper {
    *  @param runner New signer or provider.
    *  @returns      New helper targeting the same address.
    */
-  connect(runner: ContractRunner | ethers.Signer): MarketManagerHelper {
+  connect(runner: ContractRunner): MarketManagerHelper {
     if (runner === this.runner) return this;
-    return new MarketManagerHelper(this.address, runner);
+    return new MarketManagerHelper(this.address, runner, this.ops);
   }
 
   /* ================================================================ */

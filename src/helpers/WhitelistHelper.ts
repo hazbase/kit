@@ -45,6 +45,10 @@ export interface DeployResult {
   helper: WhitelistHelper;
 }
 
+export interface OptionalArgs {
+  abi?: InterfaceAbi
+}
+
 /** KYC trust level mirror (must match .sol enum order) */
 export enum KYCLevel {
   None = 0,
@@ -83,21 +87,20 @@ const EVT = {
 /* ------------------------------------------------------------------ */
 
 export class WhitelistHelper {
-  readonly address: Address;
+  readonly address : Address;
   readonly contract: ethers.Contract;
-  readonly runner: ContractRunner;
+  readonly runner  : ContractRunner;
+  readonly ops     : OptionalArgs | undefined;
 
   public static KYCLevel = KYCLevel;
 
   /** Internal constructor; prefer `attach` or `deploy`. */
-  private constructor(address: Address, runner: ContractRunner) {
+  private constructor(address: Address, runner: ContractRunner, ops?: OptionalArgs) {
     this.address = ethers.getAddress(address) as Address;
     this.runner = runner;
-    this.contract = new ethers.Contract(
-      this.address,
-      WL.abi as InterfaceAbi,
-      runner
-    );
+
+    this.ops = ops;
+    this.contract = new ethers.Contract(this.address, ops?.abi? [...WL.abi, ...ops.abi]: WL.abi, runner);
   }
 
   /* ================================================================ */
@@ -144,11 +147,8 @@ export class WhitelistHelper {
    *  @param runner  Signer or provider to perform calls/txs.
    *  @returns       Connected helper instance.
    */
-  static attach(
-    address: Address,
-    runner: ContractRunner | ethers.Signer
-  ): WhitelistHelper {
-    return new WhitelistHelper(address, runner);
+  static attach(address: Address, runner: ContractRunner, ops?: OptionalArgs): WhitelistHelper {
+    return new WhitelistHelper(address, runner, ops);
   }
 
   /** Return a new helper bound to a different signer/runner.
@@ -156,9 +156,9 @@ export class WhitelistHelper {
    *  @param runner New signer or provider.
    *  @returns      New helper instance sharing the same address.
    */
-  connect(runner: ContractRunner | ethers.Signer): WhitelistHelper {
+  connect(runner: ContractRunner): WhitelistHelper {
     if (runner === this.runner) return this;
-    return new WhitelistHelper(this.address, runner);
+    return new WhitelistHelper(this.address, runner, this.ops);
   }
 
   /* ================================================================ */

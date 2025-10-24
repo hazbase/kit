@@ -78,6 +78,10 @@ export interface MintVoucher {
   to: Address;
 }
 
+export interface OptionalArgs {
+  abi?: InterfaceAbi
+}
+
 /* ------------------------------------------------------------------ */
 /*                         EIP-712 Definitions                         */
 /* ------------------------------------------------------------------ */
@@ -121,12 +125,15 @@ export class PrivilegeEditionHelper {
   readonly address : Address;
   readonly contract: ethers.Contract;
   readonly runner  : ContractRunner;
+  readonly ops     : OptionalArgs | undefined;
 
   /** Internal constructor; prefer `attach` or `deploy`. */
-  private constructor(address: Address, runner: ContractRunner) {
+  private constructor(address: Address, runner: ContractRunner, ops?: OptionalArgs) {
     this.address  = ethers.getAddress(address) as Address;
     this.runner   = runner;
-    this.contract = new ethers.Contract(this.address, PrivilegeEdition.abi as InterfaceAbi, runner);
+
+    this.ops = ops;
+    this.contract = new ethers.Contract(this.address, ops?.abi? [...PrivilegeEdition.abi, ...ops.abi]: PrivilegeEdition.abi, runner);
   }
 
   /* ================================================================ */
@@ -169,8 +176,8 @@ export class PrivilegeEditionHelper {
    *  @param runner  Signer or provider context.
    *  @returns       Connected helper instance.
    */
-  static attach(address: Address, runner: ContractRunner | ethers.Signer): PrivilegeEditionHelper {
-    return new PrivilegeEditionHelper(address, runner);
+  static attach(address: Address, runner: ContractRunner, ops?: OptionalArgs): PrivilegeEditionHelper {
+    return new PrivilegeEditionHelper(address, runner, ops);
   }
 
   /** Return a new helper bound to a different signer/runner.
@@ -178,9 +185,9 @@ export class PrivilegeEditionHelper {
    *  @param runner New signer or provider.
    *  @returns      New helper targeting the same address.
    */
-  connect(runner: ContractRunner | ethers.Signer): PrivilegeEditionHelper {
+  connect(runner: ContractRunner): PrivilegeEditionHelper {
     if (runner === this.runner) return this;
-    return new PrivilegeEditionHelper(this.address, runner);
+    return new PrivilegeEditionHelper(this.address, runner, this.ops);
   }
 
   /* ================================================================ */

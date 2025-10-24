@@ -71,6 +71,10 @@ export interface Position {
   rewardDebt: bigint;
 }
 
+export interface OptionalArgs {
+  abi?: InterfaceAbi
+}
+
 /* ------------------------------------------------------------------ */
 /*                               Events                                */
 /* ------------------------------------------------------------------ */
@@ -94,12 +98,15 @@ export class StakingHelper {
   readonly address : Address;
   readonly contract: ethers.Contract;
   readonly runner  : ContractRunner;
+  readonly ops     : OptionalArgs | undefined;
 
   /** Internal constructor; prefer `attach` or `deploy`. */
-  private constructor(address: Address, runner: ContractRunner) {
+  private constructor(address: Address, runner: ContractRunner, ops?: OptionalArgs) {
     this.address  = ethers.getAddress(address) as Address;
     this.runner   = runner;
-    this.contract = new ethers.Contract(this.address, Staking.abi as InterfaceAbi, runner);
+
+    this.ops = ops;
+    this.contract = new ethers.Contract(this.address, ops?.abi? [...Staking.abi, ...ops.abi]: Staking.abi, runner);
   }
 
   /* ================================================================ */
@@ -134,14 +141,14 @@ export class StakingHelper {
   }
 
   /** Attach to an existing staking proxy at `address`. */
-  static attach(address: Address, runner: ContractRunner | ethers.Signer): StakingHelper {
-    return new StakingHelper(address, runner);
+  static attach(address: Address, runner: ContractRunner, ops?: OptionalArgs): StakingHelper {
+    return new StakingHelper(address, runner, ops);
   }
 
   /** Return a new helper bound to a different signer/runner. */
-  connect(runner: ContractRunner | ethers.Signer): StakingHelper {
+  connect(runner: ContractRunner): StakingHelper {
     if (runner === this.runner) return this;
-    return new StakingHelper(this.address, runner);
+    return new StakingHelper(this.address, runner, this.ops);
   }
 
   /* ================================================================ */

@@ -79,6 +79,10 @@ export interface MintVoucher {
   nonce: BigNumberish;
 }
 
+export interface OptionalArgs {
+  abi?: InterfaceAbi
+}
+
 export type AmountLike = PromiseLike<bigint> & {
   /** Returns raw bigint (smallest unit). */
   raw(): Promise<bigint>;
@@ -142,16 +146,19 @@ export class FlexibleTokenHelper {
   readonly address : Address;
   readonly contract: ethers.Contract;
   readonly runner  : ContractRunner;
+  readonly ops     : OptionalArgs | undefined;
   
   private _decimals?: number;
   private _symbol?: string;
   private _metaInit?: Promise<void>;
 
   /** Internal constructor; prefer `attach` or `deploy`. */
-  private constructor(address: Address, runner: ContractRunner) {
+  private constructor(address: Address, runner: ContractRunner, ops?: OptionalArgs) {
     this.address  = ethers.getAddress(address) as Address;
     this.runner   = runner;
-    this.contract = new ethers.Contract(this.address, FT.abi as InterfaceAbi, runner);
+
+    this.ops = ops;
+    this.contract = new ethers.Contract(this.address, ops?.abi? [...FT.abi, ...ops.abi]: FT.abi, runner);
   }
 
   private amountOf(p: Promise<bigint>): AmountLike {
@@ -206,8 +213,8 @@ export class FlexibleTokenHelper {
    *  @param runner  Signer or provider to perform calls/txs.
    *  @returns       Connected helper instance.
    */
-  static attach(address: Address, runner: ContractRunner | ethers.Signer): FlexibleTokenHelper {
-    return new FlexibleTokenHelper(address, runner);
+  static attach(address: Address, runner: ContractRunner, ops?: OptionalArgs): FlexibleTokenHelper {
+    return new FlexibleTokenHelper(address, runner, ops);
   }
 
   /** Return a new helper bound to a different signer/runner.
@@ -215,9 +222,9 @@ export class FlexibleTokenHelper {
    *  @param runner New signer or provider.
    *  @returns      New helper instance sharing the same address.
    */
-  connect(runner: ContractRunner | ethers.Signer): FlexibleTokenHelper {
+  connect(runner: ContractRunner): FlexibleTokenHelper {
     if (runner === this.runner) return this;
-    return new FlexibleTokenHelper(this.address, runner);
+    return new FlexibleTokenHelper(this.address, runner, this.ops);
   }
 
   /* ================================================================ */

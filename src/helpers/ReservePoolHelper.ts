@@ -50,6 +50,10 @@ export interface DeployArgs {
   forwarders      : readonly Address[]; // ERC-2771 trusted forwarders
 }
 
+export interface OptionalArgs {
+  abi?: InterfaceAbi
+}
+
 /** Minimal ERC20 interface (approve/allowance/decimals). */
 const ERC20_ABI: InterfaceAbi = [
   "function approve(address spender, uint256 value) external returns (bool)",
@@ -87,12 +91,15 @@ export class ReservePoolHelper {
   readonly address : Address;
   readonly contract: ethers.Contract;
   readonly runner  : ContractRunner;
+  readonly ops     : OptionalArgs | undefined;
 
   /** Internal constructor; prefer `attach` or `deploy`. */
-  private constructor(address: Address, runner: ContractRunner) {
+  private constructor(address: Address, runner: ContractRunner, ops?: OptionalArgs) {
     this.address  = address;
     this.runner   = runner;
-    this.contract = new ethers.Contract(address, ReservePool.abi as InterfaceAbi, runner);
+
+    this.ops = ops;
+    this.contract = new ethers.Contract(this.address, ops?.abi? [...ReservePool.abi, ...ops.abi]: ReservePool.abi, runner);
   }
 
   /* ================================================================ */
@@ -100,14 +107,14 @@ export class ReservePoolHelper {
   /* ================================================================ */
 
   /** Attach an existing ReservePool at `address`. */
-  static attach(address: Address, runner: ContractRunner): ReservePoolHelper {
-    return new ReservePoolHelper(address, runner);
+  static attach(address: Address, runner: ContractRunner, ops?: OptionalArgs): ReservePoolHelper {
+    return new ReservePoolHelper(address, runner, ops);
   }
 
   /** Return a new helper bound to a different signer/runner. */
-  connect(runner: ContractRunner | ethers.Signer): ReservePoolHelper {
+  connect(runner: ContractRunner): ReservePoolHelper {
     if (runner === this.runner) return this;
-    return new ReservePoolHelper(this.address, runner);
+    return new ReservePoolHelper(this.address, runner, this.ops);
   }
 
   /** Deploy a new ReservePool proxy via your factory helper.

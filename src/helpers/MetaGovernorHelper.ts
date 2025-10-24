@@ -57,6 +57,10 @@ export interface DeployResult {
   helper: MetaGovernorHelper;
 }
 
+export interface OptionalArgs {
+  abi?: InterfaceAbi
+}
+
 /* ── Solidity-side structs (public mappers) ───────────────────────── */
 
 export interface Factors     { eco: number; soc: number; }          // uint16 bp each
@@ -89,14 +93,17 @@ export class MetaGovernorHelper {
   readonly address : Address;
   readonly contract: ethers.Contract;
   readonly runner  : ContractRunner;
+  readonly ops     : OptionalArgs | undefined;
 
   public static ProposalType = ProposalType;
 
   /** Internal constructor; prefer `attach` or `deploy`. */
-  private constructor(address: Address, runner: ContractRunner) {
+  private constructor(address: Address, runner: ContractRunner, ops?: OptionalArgs) {
     this.address  = ethers.getAddress(address) as Address;
     this.runner   = runner;
-    this.contract = new ethers.Contract(this.address, MetaGovernor.abi as InterfaceAbi, runner);
+
+    this.ops = ops;
+    this.contract = new ethers.Contract(this.address, ops?.abi? [...MetaGovernor.abi, ...ops.abi]: MetaGovernor.abi, runner);
   }
 
   /* ================================================================ */
@@ -129,14 +136,14 @@ export class MetaGovernorHelper {
   }
 
   /** Attach to an existing MetaGovernor at `address`. */
-  static attach(address: Address, runner: ContractRunner | ethers.Signer): MetaGovernorHelper {
-    return new MetaGovernorHelper(address, runner);
+  static attach(address: Address, runner: ContractRunner, ops?: OptionalArgs): MetaGovernorHelper {
+    return new MetaGovernorHelper(address, runner, ops);
   }
 
   /** Return a new helper bound to a different signer/runner. */
-  connect(runner: ContractRunner | ethers.Signer): MetaGovernorHelper {
+  connect(runner: ContractRunner): MetaGovernorHelper {
     if (runner === this.runner) return this;
-    return new MetaGovernorHelper(this.address, runner);
+    return new MetaGovernorHelper(this.address, runner, this.ops);
   }
 
   /* ================================================================ */

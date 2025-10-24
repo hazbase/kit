@@ -55,6 +55,10 @@ export interface PermitForAllStruct {
   deadline: bigint;
 }
 
+export interface OptionalArgs {
+  abi?: InterfaceAbi
+}
+
 /** Signature parts used by `payCouponWithPermit`-like flows (if needed). */
 export interface SigParts { v: number; r: BytesLike; s: BytesLike; }
 
@@ -90,12 +94,15 @@ export class BondTokenHelper {
   readonly address : string;
   readonly contract: ethers.Contract;
   readonly runner  : ContractRunner;
+  readonly ops     : OptionalArgs | undefined;
 
   /** Internal constructor; prefer `attach` or `deploy`. */
-  private constructor(address: string, runner: ContractRunner) {
+  private constructor(address: string, runner: ContractRunner, ops?: OptionalArgs) {
     this.address  = ethers.getAddress(address);
     this.runner   = runner;
-    this.contract = new ethers.Contract(this.address, BondToken.abi as InterfaceAbi, runner);
+
+    this.ops = ops;
+    this.contract = new ethers.Contract(this.address, ops?.abi? [...BondToken.abi, ...ops.abi]: BondToken.abi, runner);
   }
 
   /* ================================================================ */
@@ -132,8 +139,8 @@ export class BondTokenHelper {
    *  @param runner  Signer or provider for calls/txs.
    *  @returns       Connected helper instance.
    */
-  static attach(address: string, runner: ContractRunner | ethers.Signer): BondTokenHelper {
-    return new BondTokenHelper(address, runner);
+  static attach(address: string, runner: ContractRunner, ops?: OptionalArgs): BondTokenHelper {
+    return new BondTokenHelper(address, runner, ops);
   }
 
   /** Return a new helper bound to a different signer/runner.
@@ -141,9 +148,9 @@ export class BondTokenHelper {
    *  @param runner New signer or provider.
    *  @returns      New helper instance sharing the same address.
    */
-  connect(runner: ContractRunner | ethers.Signer): BondTokenHelper {
+  connect(runner: ContractRunner): BondTokenHelper {
     if (runner === this.runner) return this;
-    return new BondTokenHelper(this.address, runner);
+    return new BondTokenHelper(this.address, runner, this.ops);
   }
 
   /* ================================================================ */
