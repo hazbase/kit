@@ -64,8 +64,8 @@ export const DEFAULT_IMPL_OWNER: Record<number,string> = {
 
 export const DEFAULT_VERIFIER_ADDRESSES: Record<number, Record<string, string>> = {
   11155111: {
-    default: '0x6c06053F13f03D319eA31F92CF954112C4b0A566',
-    group:   '0xf3B182d6F93B7bA89A978193B3387e5F7b82A2F4'
+    default: '0x035C26B3003feBAebf5e14ca801b5328D52BB103',
+    group:   '0x7487eB7C46a02585D7c8443207c421EfF1db37E5'
   }
 }
 

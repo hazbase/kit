@@ -52,8 +52,10 @@ export interface MetricInputStruct {
   metricId: Bytes32 | string;
   /** uint32 value (use number ≤ 2^32-1 or bigint) */
   value: number | bigint;
-  /** uint256 leafFull (opaque commitment / payload) */
-  leafFull: bigint;
+  /** uint256 anchor root stored on-chain (maps to Metric.leafFull) */
+  anchorRoot?: bigint;
+  /** @deprecated Use anchorRoot. */
+  leafFull?: bigint;
   /** tokenURI for new token (empty string allowed) */
   uri?: string;
   /** expire date time for metric */
@@ -64,7 +66,9 @@ export interface MintItemStruct {
   to: Address;
   metricId: Bytes32 | string;
   value: number | bigint;
-  leafFull: bigint;
+  anchorRoot?: bigint;
+  /** @deprecated Use anchorRoot. */
+  leafFull?: bigint;
   uri?: string;
   expiresAt?: bigint;
 }
@@ -72,7 +76,9 @@ export interface MintItemStruct {
 export interface MetricUpdateStruct {
   metricId: Bytes32 | string;
   newValue: number | bigint; // uint32
-  leafFull: bigint;          // uint256
+  anchorRoot?: bigint;       // uint256 (stored on-chain as leafFull)
+  /** @deprecated Use anchorRoot. */
+  leafFull?: bigint;
   expiresAt?: bigint;
 }
 
@@ -80,7 +86,9 @@ export interface UpdateItemStruct {
   tokenId: bigint;
   metricId: Bytes32 | string;
   newValue: number | bigint; // uint32
-  leafFull: bigint;          // uint256
+  anchorRoot?: bigint;       // uint256 (stored on-chain as leafFull)
+  /** @deprecated Use anchorRoot. */
+  leafFull?: bigint;
   expiresAt?: bigint;
 }
 
@@ -89,14 +97,13 @@ export interface OptionalArgs {
 }
 
 /* ------------------------------------------------------------------ */
-/*                         Compare Mask (bit flags)                    */
+/*                         Compare Mask (bit flags)                   */
 /* ------------------------------------------------------------------ */
-/* Matches CompareMask in .sol: NONE=0, GTE=1, LTE=2, EQ=4.            */
+/* Matches CompareMask in .sol: GT=1, LT=2, EQ=4. OR-combinations allowed. */
 export const CompareMask = {
   GT  : 1 << 0 as 1,
   LT  : 1 << 1 as 2,
   EQ  : 1 << 2 as 4,
-  IN  : 1 << 3 as 8,
   
   NONE: 0 as 0,
   
@@ -258,10 +265,13 @@ export class MultiTrustCredentialHelper {
    *      external whenNotPaused nonReentrant;
    */
   async mint(to: Address, input: MetricInputStruct): Promise<TransactionReceipt> {
+    const anchorRoot = (input.anchorRoot ?? input.leafFull);
+    if (anchorRoot == null) throw new Error("anchorRoot is required");
+
     const payload = {
       metricId : toBytes32(input.metricId),
       value    : input.value,
-      leafFull : input.leafFull,
+      leafFull : anchorRoot,
       uri      : input.uri ?? '',
       expiresAt: input.expiresAt ?? 0
     };
@@ -282,7 +292,7 @@ export class MultiTrustCredentialHelper {
       to       : i.to,
       metricId : toBytes32(i.metricId),
       value    : i.value,
-      leafFull : i.leafFull,
+      leafFull : (i.anchorRoot ?? i.leafFull),
       uri      : i.uri ?? '',
       expiresAt: i.expiresAt ?? 0
     }));
@@ -300,10 +310,12 @@ export class MultiTrustCredentialHelper {
    *      external whenNotPaused nonReentrant;
    */
   async updateMetric(tokenId: bigint, upd: MetricUpdateStruct): Promise<TransactionReceipt> {
+    const anchorRoot = (upd.anchorRoot ?? upd.leafFull);
+    if (anchorRoot == null) throw new Error("anchorRoot is required");
     const payload = {
       metricId: toBytes32(upd.metricId),
       newValue: upd.newValue,
-      leafFull: upd.leafFull,
+      leafFull: anchorRoot,
       expiresAt: upd.expiresAt ?? 0
     };
     const tx = await this.contract.updateMetric(tokenId, payload);
@@ -323,7 +335,7 @@ export class MultiTrustCredentialHelper {
       tokenId : i.tokenId,
       metricId: toBytes32(i.metricId),
       newValue: i.newValue,
-      leafFull: i.leafFull,
+      leafFull: (i.anchorRoot ?? i.leafFull),
       expiresAt: i.expiresAt ?? 0
     }));
     const tx = await this.contract.updateMetricBatch(payload);
@@ -335,28 +347,17 @@ export class MultiTrustCredentialHelper {
   /* ================================================================ */
 
   async updateVerifier(_verifier?: Address): Promise<TransactionReceipt> {
-    let verifier;
-    if (!_verifier) {
+    let verifier: Address;
+    if (_verifier) {
+      verifier = _verifier;
+    } else {
       const provider = this.runner.provider;
       if (!provider) throw new Error('Signer must have a provider');
-      
+
       const chainId = Number((await provider.getNetwork()).chainId);
       verifier = DEFAULT_VERIFIER_ADDRESSES[chainId].default;
     }
     const tx = await this.contract.updateVerifier(verifier);
-    return tx.wait();
-  }
-
-  async updateGroupVerifier(_verifier?: Address): Promise<TransactionReceipt> {
-    let verifier;
-    if (!_verifier) {
-      const provider = this.runner.provider;
-      if (!provider) throw new Error('Signer must have a provider');
-      
-      const chainId = Number((await provider.getNetwork()).chainId);
-      verifier = DEFAULT_VERIFIER_ADDRESSES[chainId].group;
-    }
-    const tx = await this.contract.updateGroupVerifier(verifier);
     return tx.wait();
   }
 
@@ -400,6 +401,102 @@ export class MultiTrustCredentialHelper {
       tokenId,
       toBytes32(metricId),
       a, b, c, pubSignals
+    ) as Promise<boolean>;
+  }
+
+  /* ================================================================ */
+  /* 6) ZKEx Predicates (ALLOWLIST / RANGE / DELTA)                    */
+  /* ================================================================ */
+
+  /** Predicate type helpers (keccak256("...") / bytes32). */
+  public static PredicateType = {
+    ALLOWLIST: ethers.id("ALLOWLIST") as Bytes32,
+    RANGE    : ethers.id("RANGE") as Bytes32,
+    DELTA    : ethers.id("DELTA") as Bytes32,
+  } as const;
+
+  /** Convert a predicate label or bytes32 into the on-chain predicateType (bytes32 keccak). */
+  static toPredicateType(v: Bytes32 | string): Bytes32 {
+    if (typeof v === 'string' && v.startsWith('0x') && v.length === 66) {
+      return v as Bytes32;
+    }
+    // Treat non-0x strings as labels hashed with keccak256.
+    return ethers.id(String(v)) as Bytes32;
+  }
+
+  /** Enable/disable a predicate for a metric (ADMIN_ROLE required). */
+  async setPredicateAllowed(
+    metricId: Bytes32 | string,
+    predicateType: Bytes32 | string,
+    allowed: boolean
+  ): Promise<TransactionReceipt> {
+    const tx = await this.contract.setPredicateAllowed(
+      toBytes32(metricId),
+      MultiTrustCredentialHelper.toPredicateType(predicateType),
+      allowed
+    );
+    return tx.wait();
+  }
+
+  /** Set predicate verification profile (ADMIN_ROLE required). */
+  async setPredicateProfile(
+    metricId: Bytes32 | string,
+    predicateType: Bytes32 | string,
+    predVerifier: Address,
+    signalsLen: number,
+    anchorIndex: number,
+    addrIndex: number,
+    epochIndex: number,
+    epochCheck: boolean,
+    requireMaskZero: boolean
+  ): Promise<TransactionReceipt> {
+    const tx = await this.contract.setPredicateProfile(
+      toBytes32(metricId),
+      MultiTrustCredentialHelper.toPredicateType(predicateType),
+      predVerifier,
+      signalsLen,
+      anchorIndex,
+      addrIndex,
+      epochIndex,
+      epochCheck,
+      requireMaskZero
+    );
+    return tx.wait();
+  }
+
+  /** Set predicate epoch/version (ADMIN_ROLE required). */
+  async setPredicateEpoch(
+    metricId: Bytes32 | string,
+    predicateType: Bytes32 | string,
+    epoch: bigint
+  ): Promise<TransactionReceipt> {
+    const tx = await this.contract.setPredicateEpoch(
+      toBytes32(metricId),
+      MultiTrustCredentialHelper.toPredicateType(predicateType),
+      epoch
+    );
+    return tx.wait();
+  }
+
+  /** Prove an arbitrary predicate (ZKEx). Proof must be Groth16-style (a,b,c). */
+  async provePredicate(
+    tokenId: bigint,
+    metricId: Bytes32 | string,
+    predicateType: Bytes32 | string,
+    proof: { a: readonly [string, string], b: readonly [[string, string], [string, string]], c: readonly [string, string] },
+    publicSignals: readonly bigint[]
+  ): Promise<boolean> {
+    const proofBytes = ethers.AbiCoder.defaultAbiCoder().encode(
+      ["uint256[2]","uint256[2][2]","uint256[2]"],
+      [proof.a, proof.b, proof.c]
+    );
+
+    return this.contract.provePredicate(
+      tokenId,
+      toBytes32(metricId),
+      MultiTrustCredentialHelper.toPredicateType(predicateType),
+      proofBytes,
+      publicSignals
     ) as Promise<boolean>;
   }
 
@@ -462,11 +559,6 @@ export class MultiTrustCredentialHelper {
   /** Current zk verifier address (public variable). */
   async verifier(): Promise<Address> {
     return (await this.contract.verifier()) as Address;
-  }
-
-  /** Current zk group verifier address (public variable). */
-  async gVerifier(): Promise<Address> {
-    return (await this.contract.gVerifier()) as Address;
   }
 
   /* ================================================================ */
