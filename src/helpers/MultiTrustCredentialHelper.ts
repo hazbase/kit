@@ -96,6 +96,24 @@ export interface OptionalArgs {
   abi?: InterfaceAbi
 }
 
+export interface ProofRoleGrant {
+  roleName: Bytes32 | string;
+  account: Address;
+}
+
+export interface ProofReadinessIssue {
+  code: 'verifier_not_set' | 'missing_role';
+  message: string;
+  roleName?: Bytes32;
+  account?: Address;
+}
+
+export interface ProofReadiness {
+  ready: boolean;
+  verifier: Address;
+  issues: ProofReadinessIssue[];
+}
+
 /* ------------------------------------------------------------------ */
 /*                         Compare Mask (bit flags)                   */
 /* ------------------------------------------------------------------ */
@@ -114,6 +132,8 @@ export const CompareMask = {
 } as const;
 
 export type CompareMaskKey = keyof typeof CompareMask;
+
+const ZERO_ADDR = '0x0000000000000000000000000000000000000000' as Address;
 
 /* ------------------------------------------------------------------ */
 /*                           Utilities                                 */
@@ -359,6 +379,73 @@ export class MultiTrustCredentialHelper {
     }
     const tx = await this.contract.updateVerifier(verifier);
     return tx.wait();
+  }
+
+
+  async getProofReadiness(requiredGrants: readonly ProofRoleGrant[] = []): Promise<ProofReadiness> {
+    const verifier = await this.verifier();
+    const issues: ProofReadinessIssue[] = [];
+
+    if (verifier === ZERO_ADDR) {
+      issues.push({
+        code: 'verifier_not_set',
+        message: 'Verifier is not configured on MultiTrustCredential.',
+      });
+    }
+
+    for (const grant of requiredGrants) {
+      const role = toBytes32(grant.roleName);
+      const account = ethers.getAddress(grant.account);
+      const ok = await this.contract.hasRole(role, account);
+      if (!ok) {
+        issues.push({
+          code: 'missing_role',
+          message: `Missing writer role ${role} for ${account}.`,
+          roleName: role,
+          account,
+        });
+      }
+    }
+
+    return {
+      ready: issues.length === 0,
+      verifier,
+      issues,
+    };
+  }
+
+  async assertProofReadiness(requiredGrants: readonly ProofRoleGrant[] = []): Promise<void> {
+    const readiness = await this.getProofReadiness(requiredGrants);
+    if (!readiness.ready) {
+      throw new Error(readiness.issues.map((issue) => issue.message).join(' '));
+    }
+  }
+
+  async configureProofFlow({
+    verifier,
+    roleGrants = [],
+  }: {
+    verifier?: Address;
+    roleGrants?: readonly ProofRoleGrant[];
+  }): Promise<{ verifierReceipt?: TransactionReceipt; roleReceipts: TransactionReceipt[]; readiness: ProofReadiness }> {
+    let verifierReceipt: TransactionReceipt | undefined;
+    if (verifier) {
+      verifierReceipt = await this.updateVerifier(verifier);
+    }
+
+    const roleReceipts: TransactionReceipt[] = [];
+    for (const grant of roleGrants) {
+      const role = toBytes32(grant.roleName);
+      const account = ethers.getAddress(grant.account);
+      const has = await this.contract.hasRole(role, account);
+      if (!has) {
+        const tx = await this.contract.grantRole(role, account);
+        roleReceipts.push(await tx.wait());
+      }
+    }
+
+    const readiness = await this.getProofReadiness(roleGrants);
+    return { verifierReceipt, roleReceipts, readiness };
   }
 
   /** Verify a zk proof against stored metric / mask rules.

@@ -54,6 +54,30 @@ npm i @hazbase/kit ethers dotenv
 
 ---
 
+## Migration Notes
+
+This minor release includes a breaking change in `Splitter` route definitions.
+
+### Breaking change
+`Splitter.Route` now requires `reserveBucket`. Existing route objects must be updated before upgrading.
+
+```ts
+// before
+{ dest: "0xRecipient...", bps: 5000 }
+
+// after
+{ dest: "0xRecipient...", bps: 5000, reserveBucket: "direct" }
+```
+
+Use the following values:
+- `direct`: standard recipient routing
+- `compensation`: send to a `ReservePool` compensation bucket
+- `liquidity`: send to a `ReservePool` liquidity bucket
+
+If your existing integration sends funds to a `ReservePool`, review every route explicitly instead of relying on the old implicit compensation path.
+
+---
+
 ## Environment (.env example)
 ```
 RPC_URL=https://<your-rpc>

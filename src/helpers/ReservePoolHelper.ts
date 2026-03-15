@@ -144,7 +144,7 @@ export class ReservePoolHelper {
   /* ================================================================ */
 
   /** Fund the **liquidity** bucket for `token` by `amount`.
-   *  - If `token == 0x0`, sends native ETH with `value = amount`.
+   *  - Native ETH is intentionally rejected because buy-back flow remains ERC20-only.
    *  - If ERC20, performs `approveIfNeeded(token, this.address, amount)` and calls `fundLiquidity`.
    *  @returns Transaction receipt. Emits `LiquidityFunded`.
    */
@@ -153,13 +153,11 @@ export class ReservePoolHelper {
     amount: bigint,
   ): Promise<TransactionReceipt> {
     if (token === ZERO_ADDR) {
-      const tx = await this.contract.fundLiquidity(token, amount, { value: amount });
-      return tx.wait();
-    } else {
-      await this.approveIfNeeded(token, this.address, amount);
-      const tx = await this.contract.fundLiquidity(token, amount);
-      return tx.wait();
+      throw new Error('native liquidity is disabled; use an ERC20 funding asset or fundCompensation for native');
     }
+    await this.approveIfNeeded(token, this.address, amount);
+    const tx = await this.contract.fundLiquidity(token, amount);
+    return tx.wait();
   }
 
   /** Fund the **compensation** bucket for `token` by `amount`.

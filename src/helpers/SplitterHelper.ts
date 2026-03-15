@@ -34,8 +34,21 @@ import {
 /** Canonical 20-byte address string. */
 export type Address = string;
 
-/** Route struct mirror: destination and share in basis points (1–10,000). */
-export interface Route { dest: string; bps: number; }
+export const ReserveBucket = {
+  DIRECT: 0,
+  COMPENSATION: 1,
+  LIQUIDITY: 2,
+} as const;
+
+export type ReserveBucketValue = typeof ReserveBucket[keyof typeof ReserveBucket];
+export type ReserveBucketInput = ReserveBucketValue | 'direct' | 'compensation' | 'liquidity';
+
+/** Route struct mirror: destination, share, and optional ReservePool bucket target. */
+export interface Route {
+  dest: string;
+  bps: number;
+  reserveBucket: ReserveBucketInput;
+}
 
 /** Result of deployment via factory. */
 export interface DeployResult {
@@ -90,6 +103,7 @@ export class SplitterHelper {
   /** Deploy a new Splitter proxy via your factory helper.
    *  - Initializes with: `initialize(admin, routes, forwarders)`.
    *  - `routes` must be 1..10 entries and sum of `bps` must be exactly 10,000.
+   *  - `reserveBucket` must be explicit for each route.
    */
   static async deploy(
     {
@@ -110,7 +124,7 @@ export class SplitterHelper {
     const res = await deployViaFactory({
       contractType : Splitter.contractType,  // e.g., "Splitter"
       implABI      : Splitter.abi,
-      initArgs     : [admin, routes, trustedForwarders],
+      initArgs     : [admin, SplitterHelper.normalizeRoutes(routes), trustedForwarders],
       signer,
       ...(opts ?? {}),
     });
@@ -174,7 +188,7 @@ export class SplitterHelper {
    */
   async setRoutes(routes: readonly Route[]): Promise<TransactionReceipt> {
     SplitterHelper.assertRoutes(routes);
-    const tx = await this.contract.setRoutes(routes);
+    const tx = await this.contract.setRoutes(SplitterHelper.normalizeRoutes(routes));
     return tx.wait();
   }
 
@@ -191,7 +205,8 @@ export class SplitterHelper {
         // Ethers v6 tuple result: [dest, bps] with named props if ABI includes names
         const dest = ethers.getAddress(r.dest ?? r[0]);
         const bps  = Number(r.bps ?? r[1]);
-        out.push({ dest, bps });
+        const reserveBucket = SplitterHelper.normalizeReserveBucket(Number(r.reserveBucket ?? r[2]) as ReserveBucketValue);
+        out.push({ dest, bps, reserveBucket });
       } catch {
         break;
       }
@@ -275,15 +290,39 @@ export class SplitterHelper {
   /* 7) Utilities                                                      */
   /* ================================================================ */
 
+  static normalizeReserveBucket(bucket: ReserveBucketInput): ReserveBucketValue {
+    if (typeof bucket === 'number') {
+      if (bucket === ReserveBucket.DIRECT || bucket === ReserveBucket.COMPENSATION || bucket === ReserveBucket.LIQUIDITY) {
+        return bucket;
+      }
+      throw new Error('route.reserveBucket must be direct, compensation, or liquidity');
+    }
+
+    const normalized = bucket.toLowerCase();
+    if (normalized === 'direct') return ReserveBucket.DIRECT;
+    if (normalized === 'compensation') return ReserveBucket.COMPENSATION;
+    if (normalized === 'liquidity') return ReserveBucket.LIQUIDITY;
+    throw new Error('route.reserveBucket must be direct, compensation, or liquidity');
+  }
+
+  static normalizeRoutes(routes: readonly Route[]) {
+    return routes.map(({ dest, bps, reserveBucket }) => ({
+      dest,
+      bps,
+      reserveBucket: SplitterHelper.normalizeReserveBucket(reserveBucket),
+    }));
+  }
+
   /** Validate routes: 1..10 entries, each `bps` in [1, 10000], sum == 10000, no zero dest. */
   static assertRoutes(routes: readonly Route[]): void {
     if (!routes.length || routes.length > 10) {
       throw new Error('routes length must be 1..10');
     }
     let sum = 0;
-    for (const { dest, bps } of routes) {
+    for (const { dest, bps, reserveBucket } of routes) {
       if (!ethers.isAddress(dest) || dest === ZERO_ADDR) throw new Error('route.dest must be a non-zero address');
       if (bps <= 0 || bps > 10_000) throw new Error('route.bps must be in [1, 10000]');
+      SplitterHelper.normalizeReserveBucket(reserveBucket);
       sum += bps;
     }
     if (sum !== 10_000) throw new Error('sum of bps must equal 10,000');

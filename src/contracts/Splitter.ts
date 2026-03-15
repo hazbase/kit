@@ -2,7 +2,7 @@
 /* eslint-disable prettier/prettier */
 export const Splitter = {
   contractType: 'Splitter',
-  initArgs: 'initialize(address admin, (address,uint16)[] calldata _routes, address[] calldata forwarders)',
+  initArgs: 'initialize(address admin, (address,uint16,uint8)[] calldata _routes, address[] calldata forwarders)',
   abi: [
     {
       "inputs": [],
@@ -583,6 +583,11 @@ export const Splitter = {
               "internalType": "uint16",
               "name": "bps",
               "type": "uint16"
+            },
+            {
+              "internalType": "enum ReserveBucket",
+              "name": "reserveBucket",
+              "type": "uint8"
             }
           ],
           "internalType": "struct Splitter.Route[]",
@@ -764,6 +769,11 @@ export const Splitter = {
           "internalType": "uint16",
           "name": "bps",
           "type": "uint16"
+        },
+        {
+          "internalType": "enum ReserveBucket",
+          "name": "reserveBucket",
+          "type": "uint8"
         }
       ],
       "stateMutability": "view",
@@ -782,6 +792,11 @@ export const Splitter = {
               "internalType": "uint16",
               "name": "bps",
               "type": "uint16"
+            },
+            {
+              "internalType": "enum ReserveBucket",
+              "name": "reserveBucket",
+              "type": "uint8"
             }
           ],
           "internalType": "struct Splitter.Route[]",
