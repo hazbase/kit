@@ -327,6 +327,26 @@ export class KpiRegistryHelper {
     return arr as Bytes32[];
   }
 
+  /** Attached MultiTrustCredential address recorded by the registry. */
+  async mtcAddress(): Promise<Address> {
+    return ethers.getAddress(await this.contract.mtc()) as Address;
+  }
+
+  /** True if `account` holds `roleName` on the registry. */
+  async hasRole(roleName: Bytes32 | string, account: Address): Promise<boolean> {
+    return this.contract.hasRole(toBytes32(roleName), ethers.getAddress(account)) as Promise<boolean>;
+  }
+
+  /** Registry admin role bytes32. */
+  async adminRole(): Promise<Bytes32> {
+    return this.contract.ADMIN_ROLE() as Promise<Bytes32>;
+  }
+
+  /** Registry oracle role bytes32. */
+  async oracleRole(): Promise<Bytes32> {
+    return this.contract.ORACLE_ROLE() as Promise<Bytes32>;
+  }
+
   /* ================================================================ */
   /* 4) Event Queries (optional conveniences)                          */
   /* ================================================================ */

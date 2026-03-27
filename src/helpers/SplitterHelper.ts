@@ -42,6 +42,20 @@ export const ReserveBucket = {
 
 export type ReserveBucketValue = typeof ReserveBucket[keyof typeof ReserveBucket];
 export type ReserveBucketInput = ReserveBucketValue | 'direct' | 'compensation' | 'liquidity';
+export type RoutedAssetKind = 'erc20' | 'native';
+
+export interface RouteLintIssue {
+  code: 'routes_length' | 'route_dest' | 'route_bps' | 'route_bucket' | 'routes_sum' | 'native_liquidity';
+  message: string;
+  index?: number;
+}
+
+export interface RouteLintResult {
+  ok: boolean;
+  assetKind: RoutedAssetKind;
+  totalBps: number;
+  issues: RouteLintIssue[];
+}
 
 /** Route struct mirror: destination, share, and optional ReservePool bucket target. */
 export interface Route {
@@ -170,6 +184,7 @@ export class SplitterHelper {
    *    function routeNative() external payable nonReentrant;
    */
   async routeNative(amount: bigint): Promise<TransactionReceipt> {
+    SplitterHelper.assertAssetCompatibleRoutes(await this.getRoutes(), 'native');
     const tx = await this.contract.routeNative({ value: amount });
     return tx.wait();
   }
@@ -313,19 +328,56 @@ export class SplitterHelper {
     }));
   }
 
+  static lintRoutes(routes: readonly Route[], assetKind: RoutedAssetKind = 'erc20'): RouteLintResult {
+    const issues: RouteLintIssue[] = [];
+    let totalBps = 0;
+
+    if (!routes.length || routes.length > 10) {
+      issues.push({ code: 'routes_length', message: 'routes length must be 1..10' });
+    }
+
+    routes.forEach((route, index) => {
+      if (!ethers.isAddress(route.dest) || route.dest === ZERO_ADDR) {
+        issues.push({ code: 'route_dest', message: 'route[' + index + '].dest must be a non-zero address', index });
+      }
+
+      if (route.bps <= 0 || route.bps > 10_000) {
+        issues.push({ code: 'route_bps', message: 'route[' + index + '].bps must be in [1, 10000]', index });
+      }
+
+      try {
+        const bucket = SplitterHelper.normalizeReserveBucket(route.reserveBucket);
+        if (assetKind === 'native' && bucket === ReserveBucket.LIQUIDITY) {
+          issues.push({
+            code: 'native_liquidity',
+            message: 'route[' + index + '] sends native funds to ReservePool liquidity; use compensation or ERC20 liquidity funding instead',
+            index,
+          });
+        }
+      } catch {
+        issues.push({ code: 'route_bucket', message: 'route[' + index + '].reserveBucket must be direct, compensation, or liquidity', index });
+      }
+
+      totalBps += route.bps;
+    });
+
+    if (totalBps !== 10_000) {
+      issues.push({ code: 'routes_sum', message: 'sum of bps must equal 10,000' });
+    }
+
+    return { ok: issues.length === 0, assetKind, totalBps, issues };
+  }
+
+  static assertAssetCompatibleRoutes(routes: readonly Route[], assetKind: RoutedAssetKind = 'erc20'): void {
+    const lint = SplitterHelper.lintRoutes(routes, assetKind);
+    if (!lint.ok) {
+      throw new Error(lint.issues.map((issue) => issue.message).join(' '));
+    }
+  }
+
   /** Validate routes: 1..10 entries, each `bps` in [1, 10000], sum == 10000, no zero dest. */
   static assertRoutes(routes: readonly Route[]): void {
-    if (!routes.length || routes.length > 10) {
-      throw new Error('routes length must be 1..10');
-    }
-    let sum = 0;
-    for (const { dest, bps, reserveBucket } of routes) {
-      if (!ethers.isAddress(dest) || dest === ZERO_ADDR) throw new Error('route.dest must be a non-zero address');
-      if (bps <= 0 || bps > 10_000) throw new Error('route.bps must be in [1, 10000]');
-      SplitterHelper.normalizeReserveBucket(reserveBucket);
-      sum += bps;
-    }
-    if (sum !== 10_000) throw new Error('sum of bps must equal 10,000');
+    SplitterHelper.assertAssetCompatibleRoutes(routes, 'erc20');
   }
 }
 

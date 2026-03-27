@@ -25,6 +25,7 @@ import {
   DeployViaFactoryOptions
 } from '../deployViaFactory';
 import { DEFAULT_VERIFIER_ADDRESSES } from '../constants';
+import { KpiRegistryHelper } from './KpiRegistryHelper';
 
 /* ------------------------------------------------------------------ */
 /*                               Types                                 */
@@ -102,7 +103,12 @@ export interface ProofRoleGrant {
 }
 
 export interface ProofReadinessIssue {
-  code: 'verifier_not_set' | 'missing_role';
+  code:
+    | 'verifier_not_set'
+    | 'missing_role'
+    | 'kpi_registry_mtc_mismatch'
+    | 'kpi_registry_missing_admin_role'
+    | 'kpi_registry_missing_writer_role';
   message: string;
   roleName?: Bytes32;
   account?: Address;
@@ -112,6 +118,11 @@ export interface ProofReadiness {
   ready: boolean;
   verifier: Address;
   issues: ProofReadinessIssue[];
+}
+
+export interface IntegratedProofReadiness extends ProofReadiness {
+  kpiRegistry?: Address;
+  kpiRegistryMtc?: Address;
 }
 
 /* ------------------------------------------------------------------ */
@@ -416,6 +427,82 @@ export class MultiTrustCredentialHelper {
 
   async assertProofReadiness(requiredGrants: readonly ProofRoleGrant[] = []): Promise<void> {
     const readiness = await this.getProofReadiness(requiredGrants);
+    if (!readiness.ready) {
+      throw new Error(readiness.issues.map((issue) => issue.message).join(' '));
+    }
+  }
+
+  async getIntegratedProofReadiness({
+    kpiRegistry,
+    requiredGrants = [],
+    requiredKpiWriterRoles = [],
+  }: {
+    kpiRegistry?: Address | KpiRegistryHelper;
+    requiredGrants?: readonly ProofRoleGrant[];
+    requiredKpiWriterRoles?: readonly (Bytes32 | string)[];
+  } = {}): Promise<IntegratedProofReadiness> {
+    const readiness = await this.getProofReadiness(requiredGrants);
+    const issues: ProofReadinessIssue[] = [...readiness.issues];
+
+    let kpiRegistryAddress: Address | undefined;
+    let kpiRegistryMtc: Address | undefined;
+
+    if (kpiRegistry) {
+      const helper = typeof kpiRegistry === 'string'
+        ? KpiRegistryHelper.attach(kpiRegistry, this.runner)
+        : kpiRegistry;
+
+      kpiRegistryAddress = helper.address as Address;
+      kpiRegistryMtc = await helper.mtcAddress();
+
+      if (ethers.getAddress(kpiRegistryMtc) !== this.address) {
+        issues.push({
+          code: 'kpi_registry_mtc_mismatch',
+          message: 'KpiRegistry ' + helper.address + ' points to ' + kpiRegistryMtc + ', not ' + this.address + '.',
+          account: helper.address as Address,
+        });
+      }
+
+      const adminRole = await this.contract.ADMIN_ROLE();
+      const hasRegistryAdmin = await this.contract.hasRole(adminRole, helper.address);
+      if (!hasRegistryAdmin) {
+        issues.push({
+          code: 'kpi_registry_missing_admin_role',
+          message: 'KpiRegistry ' + helper.address + ' is missing MTC ADMIN_ROLE on ' + this.address + '.',
+          roleName: adminRole as Bytes32,
+          account: helper.address as Address,
+        });
+      }
+
+      for (const roleName of requiredKpiWriterRoles) {
+        const role = toBytes32(roleName);
+        const hasRole = await this.contract.hasRole(role, helper.address);
+        if (!hasRole) {
+          issues.push({
+            code: 'kpi_registry_missing_writer_role',
+            message: 'KpiRegistry ' + helper.address + ' is missing writer role ' + role + ' on ' + this.address + '.',
+            roleName: role,
+            account: helper.address as Address,
+          });
+        }
+      }
+    }
+
+    return {
+      ready: issues.length === 0,
+      verifier: readiness.verifier,
+      issues,
+      kpiRegistry: kpiRegistryAddress,
+      kpiRegistryMtc,
+    };
+  }
+
+  async assertIntegratedProofReadiness(args: {
+    kpiRegistry?: Address | KpiRegistryHelper;
+    requiredGrants?: readonly ProofRoleGrant[];
+    requiredKpiWriterRoles?: readonly (Bytes32 | string)[];
+  } = {}): Promise<void> {
+    const readiness = await this.getIntegratedProofReadiness(args);
     if (!readiness.ready) {
       throw new Error(readiness.issues.map((issue) => issue.message).join(' '));
     }

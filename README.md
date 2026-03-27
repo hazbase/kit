@@ -76,8 +76,27 @@ Use the following values:
 
 If your existing integration sends funds to a `ReservePool`, review every route explicitly instead of relying on the old implicit compensation path.
 
----
+### Proof bootstrap checklist
+Treat `deployed` and `proof-ready` as separate states when using `MultiTrustCredential` with `KpiRegistry`.
 
+```ts
+const mtc = MultiTrustCredentialHelper.attach(process.env.MTC_ADDRESS!, signer);
+
+await mtc.assertIntegratedProofReadiness({
+  kpiRegistry: process.env.KPI_REGISTRY_ADDRESS!,
+  requiredKpiWriterRoles: ['KPI_WRITER'],
+});
+```
+
+Use this check after deploy and before enabling proof-dependent flows in staging or production. It will fail if:
+- the verifier is not configured on `MultiTrustCredential`
+- the `KpiRegistry` points at a different MTC instance
+- the registry is missing `MTC.ADMIN_ROLE`
+- the registry is missing required writer-role grants on MTC
+
+For Splitter route validation, use `SplitterHelper.lintRoutes(routes, 'erc20' | 'native')` during config review. Native routes that try to fund the ReservePool liquidity bucket are rejected by the helper before submission.
+
+---
 ## Environment (.env example)
 ```
 RPC_URL=https://<your-rpc>
