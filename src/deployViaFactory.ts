@@ -42,16 +42,19 @@ export async function deployViaFactory(
   const chainId  = Number((await provider.getNetwork()).chainId);
   const cTypeHash = ethers.id(contractType);
 
-  /* factory / owner / initFn fallback tables */
+  /* factory / owner / initFn fallback tables.
+     Use validAddr() so empty-string ('') placeholder entries in the constant
+     tables fall through to a clear error instead of being passed to ethers as a
+     bogus address (which would throw a cryptic encoding error). */
   const factoryAddr =
-    factoryOverride ??
-    FACTORY_ADDRESSES[chainId] ??
-    fail(`No factory mapping for chain ${chainId}`);
+    validAddr(factoryOverride) ??
+    validAddr(FACTORY_ADDRESSES[chainId]) ??
+    fail(`No valid factory mapping for chain ${chainId} (pass a factory override)`);
 
   const implOwner =
-    ownerOverride ??
-    DEFAULT_IMPL_OWNER[chainId] ??
-    fail(`No implOwner default for chain ${chainId}`);
+    validAddr(ownerOverride) ??
+    validAddr(DEFAULT_IMPL_OWNER[chainId]) ??
+    fail(`No valid implOwner default for chain ${chainId} (pass an implOwner override)`);
 
   const initFn =
     initFnOverride ??
@@ -87,3 +90,8 @@ export async function deployViaFactory(
 
 /* ---------- helper --------------------------------------- */
 function fail(msg: string): never { throw new Error(msg); }
+
+/** Returns the checksummed address if valid & non-empty, else undefined. */
+function validAddr(x?: string): string | undefined {
+  return x && ethers.isAddress(x) ? ethers.getAddress(x) : undefined;
+}

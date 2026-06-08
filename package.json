@@ -33,7 +33,7 @@
     "sideEffects": false,
     "dependencies": {
         "@hazbase/relayer": "^0.0.18",
-        "ethers": "^6.12.1"
+        "ethers": "^6.16.0"
     },
     "devDependencies": {
         "@types/node": "^20.11.19",
@@ -48,5 +48,8 @@
     },
     "publishConfig": {
         "access": "public"
+    },
+    "overrides": {
+        "ws": "^8.21.0"
     }
 }

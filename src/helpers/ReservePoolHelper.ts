@@ -95,7 +95,9 @@ export class ReservePoolHelper {
 
   /** Internal constructor; prefer `attach` or `deploy`. */
   private constructor(address: Address, runner: ContractRunner, ops?: OptionalArgs) {
-    this.address  = address;
+    // Normalize/validate the address (consistent with the other helpers) so a
+    // malformed/typo'd address is rejected at construction, not deep in a call.
+    this.address  = ethers.getAddress(address) as Address;
     this.runner   = runner;
 
     this.ops = ops;

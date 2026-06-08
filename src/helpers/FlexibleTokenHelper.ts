@@ -44,9 +44,10 @@ export interface DeployArgs {
   symbol: string;
   /** Recipient of initial supply (also granted MINTER_ROLE) */
   treasury: Address;
-  /** Initial mint amount sent to `treasury` (cap-checked) */
+  /** Initial mint amount sent to `treasury` (cap-checked). RAW smallest unit
+   *  (like mint()): use ethers.parseUnits("100", decimals) for human amounts. */
   initialSupply: BigNumberish;
-  /** Supply cap (0 ⇒ unlimited) */
+  /** Supply cap (0 ⇒ unlimited). RAW smallest unit (see `initialSupply`). */
   cap: BigNumberish;
   /** ERC-20 decimals (0..18) */
   decimals: number;
@@ -181,10 +182,13 @@ export class FlexibleTokenHelper {
     signer: ethers.Signer,
     opts?: Partial<Omit<DeployViaFactoryOptions, "contractType" | "implABI" | "initArgs" | "signer">>,
   ): Promise<DeployResult> {
-    
-    args.initialSupply = ethers.parseUnits(args.initialSupply.toString(), args.decimals)
-    args.cap = ethers.parseUnits(args.cap.toString(), args.decimals)
 
+    // `initialSupply` and `cap` are RAW smallest-unit amounts (BigNumberish),
+    // consistent with mint()/burn()/transfer() and the on-chain initialize(...)
+    // signature. Do NOT re-scale here: doing so (parseUnits) double-scaled any
+    // already-raw value by 10**decimals. Convert human-readable amounts at the
+    // call site, e.g. ethers.parseUnits("1000000000", decimals). Caller args are
+    // also not mutated.
     const res = await deployViaFactory({
       contractType : FT.contractType, // e.g., "FlexibleToken"
       implABI      : FT.abi,

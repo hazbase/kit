@@ -134,7 +134,7 @@ async function main() {
       symbol,
       treasury: signer.address,
       initialSupply: 0n,
-      cap: ethers.parseUnits("1000000000", 6), // 1 B max
+      cap: ethers.parseUnits("1000000000", decimals), // raw, scaled by token decimals — 1 B max
       decimals,
       transferable: true,
       admin: signer.address,
@@ -263,6 +263,25 @@ for (const l of logs) {
 ## Next steps
 - See each helper’s **detailed page** (`FlexibleTokenHelper`, `BondTokenHelper`, `KpiRegistryHelper`, …) for full signatures, revert reasons, and recipes.
 - Implement **event aggregation / snapshots** in your dashboard/backend for robust **disclosure & audit**.
+
+---
+
+## Security: recommended overrides
+
+`ethers` currently pins a `ws` version with a known advisory, and npm ignores
+`overrides` declared *inside* a dependency. To protect **your own** dependency tree,
+add this to your application's `package.json` and reinstall:
+
+```jsonc
+{
+  "overrides": {
+    "ws": "^8.21.0"
+  }
+}
+```
+
+(yarn: use `resolutions`; pnpm: use `pnpm.overrides`.) Workaround until `ethers`
+ships a fixed `ws` range upstream.
 
 ---
 

@@ -386,7 +386,13 @@ export class MultiTrustCredentialHelper {
       if (!provider) throw new Error('Signer must have a provider');
 
       const chainId = Number((await provider.getNetwork()).chainId);
-      verifier = DEFAULT_VERIFIER_ADDRESSES[chainId].default;
+      const entry = DEFAULT_VERIFIER_ADDRESSES[chainId];
+      if (!entry?.default) {
+        throw new Error(
+          `No default verifier configured for chain ${chainId}; pass an explicit verifier address`,
+        );
+      }
+      verifier = entry.default;
     }
     const tx = await this.contract.updateVerifier(verifier);
     return tx.wait();
