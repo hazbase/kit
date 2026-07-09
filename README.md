@@ -7,6 +7,8 @@
 For each domain (issuance, KPI, whitelist, emergency pause, etc.) it provides **typed Helpers** that unify **reads/writes, snapshots, and event handling** over **ethers v6**. Use the same code in **browsers or Node.js**.
 
 - Typical helpers: `FlexibleTokenHelper`, `BondTokenHelper`, `KpiRegistryHelper`, `EmergencyPauseManagerHelper`, `WhitelistHelper`, …
+- Wallet API client: `createHazbaseWalletClient` for token lists, balances, activity, transfers, and x402 wallet payments
+- x402 utilities: request parsing, payment requirement selection, URL handoff, and extension content bridge helpers
 - Design: **ESM‑first**, **ethers v6**, BigInt‑friendly types, minimal runtime assumptions
 - Goal: Let frontends and backends **safely connect and operate** contracts using a consistent TypeScript API
 
@@ -50,6 +52,136 @@ For each domain (issuance, KPI, whitelist, emergency pause, etc.) it provides **
 pnpm add @hazbase/kit ethers dotenv
 # or
 npm i @hazbase/kit ethers dotenv
+```
+
+---
+
+## Quick start: hazBase wallet API client
+
+Use `createHazbaseWalletClient` from `@hazbase/kit/wallet` when an app needs
+hazBase-hosted wallet APIs without hand-writing fetch wrappers. The wallet
+subpath is browser-friendly and does not pull in contract helper dependencies.
+
+```ts
+import { createHazbaseWalletClient } from '@hazbase/kit/wallet';
+
+const wallet = createHazbaseWalletClient();
+
+const tokens = await wallet.listTokens({ chainId: 11155111 });
+
+const balance = await wallet.getBalance({
+  chainId: 11155111,
+  token: 'example-token',
+  account: '0x1234...',
+});
+
+const prepared = await wallet.prepareTransfer({
+  chainId: 11155111,
+  token: 'example-token',
+  account: '0x1234...',
+  recipient: '0xabcd...',
+  amount: '10.0',
+});
+
+const submitted = await wallet.submitTransfer({
+  emailSession: '<app-session-access-token>',
+  chainId: 11155111,
+  token: 'example-token',
+  account: prepared.account,
+  recipient: prepared.recipient,
+  amount: prepared.amount.input,
+  deviceBindingId: 'devb_...',
+  highTrustToken: '<fresh-passkey-token>',
+});
+```
+
+The client is token-agnostic. Pass token IDs, chain IDs, account addresses, and
+metadata from your application config.
+
+By default, the client uses `https://api.hazbase.com`. Pass `apiEndpoint` only
+when you need a local, staging, or self-hosted API:
+
+```ts
+const localWallet = createHazbaseWalletClient({
+  apiEndpoint: 'http://127.0.0.1:3110',
+});
+```
+
+---
+
+## Quick start: x402 parsing and wallet extension bridge
+
+Use `@hazbase/kit/x402` to parse payment requirements without hard-coding a
+specific token or chain. The caller supplies the accepted networks and assets.
+
+```ts
+import { summarizeX402Request } from '@hazbase/kit/x402';
+
+const request = summarizeX402Request(x402Payload, {
+  sourceUrl: location.href,
+  pageTitle: document.title,
+}, {
+  networks: ['sepolia'],
+  assets: [{ asset: '0xTokenAddress...', assetKey: 'example-token', decimals: 18 }],
+});
+```
+
+Wallet extensions can use `@hazbase/kit/extension` to expose the standard
+`hazbase:x402:*` and `hazbase:wallet:address-*` page bridge while keeping
+wallet-specific runtime message names in the app.
+
+```ts
+import { installHazbaseWalletContentBridge } from '@hazbase/kit/extension';
+
+installHazbaseWalletContentBridge({
+  walletName: 'Example Wallet',
+  openX402MessageType: 'example:x402Detected',
+  receiveAddressMessageType: 'example:receiveAddress',
+  runtimePaymentMessageType: 'example:x402BridgePayment',
+  runtimeCancelledMessageType: 'example:x402BridgeCancelled',
+});
+```
+
+Static merchant or game pages can also load the browser bundle and use the same
+page bridge without a framework:
+
+Copy `node_modules/@hazbase/kit/dist/browser.global.js` to a public asset path
+such as `/vendor/hazbase-kit.js`.
+
+```html
+<script src="/vendor/hazbase-kit.js"></script>
+<script>
+  (async () => {
+    const result = await HazbaseKit.requestWalletAddress({
+      purpose: 'account_link',
+      timeoutMs: 2500,
+    });
+
+    if (result.ok) {
+      console.log('linked wallet', result.address);
+    }
+  })();
+</script>
+```
+
+For x402 handoff pages, use the browser helpers to keep URL generation and
+extension messages consistent across services:
+
+```js
+const walletUrl = HazbaseKit.createX402WalletUrl(walletBaseUrl, x402Payload, {
+  sourceUrl: location.href,
+  title: document.title,
+  completionMode: 'fragment',
+  completionParam: 'xPayment',
+});
+
+HazbaseKit.postX402BridgeRequest({
+  x402: x402Payload,
+  sourceUrl: location.href,
+  title: document.title,
+  completionMode: 'fragment',
+  completionParam: 'xPayment',
+});
 ```
 
 ---
