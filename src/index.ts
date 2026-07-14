@@ -1,5 +1,6 @@
 export { ContractBuilder } from './ContractBuilder';
 export * from './wallet';
+export * from './extension';
 // Helpers
 export { AgreementManagerHelper } from './helpers/AgreementManagerHelper';
 export { PrivilegeNFTHelper } from './helpers/PrivilegeNFTHelper';

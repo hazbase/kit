@@ -272,6 +272,76 @@ export type X402HazbaseWalletPaymentResult = {
   status?: string;
 };
 
+export type CreateWalletLinkChallengeInput = {
+  origin: string;
+  purpose?: string;
+  endpoint?: string;
+};
+
+export type WalletLinkChallengeResult = {
+  challengeId: string;
+  nonce: string;
+  origin: string;
+  purpose: string;
+  expiresAt: string;
+  status?: string;
+};
+
+export type ApproveWalletLinkInput = {
+  emailSession: string;
+  challengeId: string;
+  nonce: string;
+  walletAddress: string;
+  chainId: number;
+  endpoint?: string;
+};
+
+export type ApproveWalletLinkResult = {
+  challengeId: string;
+  proof: string;
+  expiresAt: string;
+  status?: string;
+};
+
+export type VerifyWalletLinkInput = {
+  challengeId: string;
+  nonce: string;
+  proof: string;
+  origin: string;
+  endpoint?: string;
+};
+
+export type VerifyWalletLinkResult = {
+  verified: true;
+  walletAddress: string;
+  chainId: number;
+  origin: string;
+  purpose: string;
+  assurance: 'authenticated_wallet_session';
+  expiresAt: string;
+  linkSessionToken: string;
+  linkSessionExpiresAt: string;
+  status?: string;
+};
+
+export type VerifyWalletLinkSessionInput = {
+  linkSessionToken: string;
+  origin: string;
+  endpoint?: string;
+};
+
+export type VerifyWalletLinkSessionResult = {
+  verified: true;
+  linkSessionId: string;
+  walletAddress: string;
+  chainId: number;
+  origin: string;
+  purpose: string;
+  assurance: 'authenticated_wallet_session';
+  linkSessionExpiresAt: string;
+  status?: string;
+};
+
 export type HazbaseWalletClient = ReturnType<typeof createHazbaseWalletClient>;
 
 export function createHazbaseWalletClient(options: HazbaseWalletClientOptions = {}) {
@@ -392,6 +462,47 @@ export function createHazbaseWalletClient(options: HazbaseWalletClientOptions = 
           ...(input.waitForReceipt != null ? { waitForReceipt: input.waitForReceipt } : {}),
           ...(input.expectedAmountAtomic ? { expectedAmountAtomic: input.expectedAmountAtomic } : {}),
           ...(input.expectedPayTo ? { expectedPayTo: input.expectedPayTo } : {}),
+        },
+      });
+    },
+
+    createWalletLinkChallenge(input: CreateWalletLinkChallengeInput): Promise<WalletLinkChallengeResult> {
+      return request<WalletLinkChallengeResult>('POST', input.endpoint ?? '/api/wallet/link/challenge', {
+        body: {
+          origin: input.origin,
+          purpose: input.purpose ?? 'wallet_connection',
+        },
+      });
+    },
+
+    approveWalletLink(input: ApproveWalletLinkInput): Promise<ApproveWalletLinkResult> {
+      return request<ApproveWalletLinkResult>('POST', input.endpoint ?? '/api/wallet/link/approve', {
+        emailSession: input.emailSession,
+        body: {
+          challengeId: input.challengeId,
+          nonce: input.nonce,
+          walletAddress: input.walletAddress,
+          chainId: input.chainId,
+        },
+      });
+    },
+
+    verifyWalletLink(input: VerifyWalletLinkInput): Promise<VerifyWalletLinkResult> {
+      return request<VerifyWalletLinkResult>('POST', input.endpoint ?? '/api/wallet/link/verify', {
+        body: {
+          challengeId: input.challengeId,
+          nonce: input.nonce,
+          proof: input.proof,
+          origin: input.origin,
+        },
+      });
+    },
+
+    verifyWalletLinkSession(input: VerifyWalletLinkSessionInput): Promise<VerifyWalletLinkSessionResult> {
+      return request<VerifyWalletLinkSessionResult>('POST', input.endpoint ?? '/api/wallet/link/session/verify', {
+        body: {
+          linkSessionToken: input.linkSessionToken,
+          origin: input.origin,
         },
       });
     },

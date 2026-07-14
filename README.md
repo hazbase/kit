@@ -127,8 +127,8 @@ const request = summarizeX402Request(x402Payload, {
 ```
 
 Wallet extensions can use `@hazbase/kit/extension` to expose the standard
-`hazbase:x402:*` and `hazbase:wallet:address-*` page bridge while keeping
-wallet-specific runtime message names in the app.
+`hazbase:x402:*` and signed `hazbase:wallet:link-*` page bridges while keeping
+wallet-specific runtime message names in the wallet implementation.
 
 ```ts
 import { installHazbaseWalletContentBridge } from '@hazbase/kit/extension';
@@ -136,11 +136,17 @@ import { installHazbaseWalletContentBridge } from '@hazbase/kit/extension';
 installHazbaseWalletContentBridge({
   walletName: 'Example Wallet',
   openX402MessageType: 'example:x402Detected',
-  receiveAddressMessageType: 'example:receiveAddress',
+  receiveWalletLinkMessageType: 'example:approveWalletLink',
   runtimePaymentMessageType: 'example:x402BridgePayment',
   runtimeCancelledMessageType: 'example:x402BridgeCancelled',
 });
 ```
+
+The wallet runtime must approve the forwarded challenge with
+`createHazbaseWalletClient().approveWalletLink(...)` after checking that the
+requested address belongs to its authenticated app session. This produces a
+short-lived proof bound to the requesting origin, purpose, wallet, chain, and
+one-time nonce.
 
 Static merchant or game pages can also load the browser bundle and use the same
 page bridge without a framework:
@@ -152,17 +158,55 @@ such as `/vendor/hazbase-kit.js`.
 <script src="/vendor/hazbase-kit.js"></script>
 <script>
   (async () => {
-    const result = await HazbaseKit.requestWalletAddress({
+    const result = await HazbaseKit.requestWalletLink({
       purpose: 'account_link',
-      timeoutMs: 2500,
+      timeoutMs: 3500,
     });
 
     if (result.ok) {
-      console.log('linked wallet', result.address);
+      console.log('verified wallet', result.walletAddress);
+      localStorage.setItem('wallet-link-session', result.linkSessionToken);
+      return;
+    }
+
+    if (result.challenge) {
+      location.href = HazbaseKit.createWalletLinkPwaUrl(walletBaseUrl, {
+        challenge: result.challenge,
+        returnUrl: location.href,
+      });
     }
   })();
 </script>
 ```
+
+After a PWA handoff returns, consume and verify the proof before persisting the
+address:
+
+```js
+const verified = await HazbaseKit.consumeAndVerifyWalletLinkFromFragment();
+if (verified) {
+  console.log('verified wallet', verified.walletAddress);
+  localStorage.setItem('wallet-link-session', verified.linkSessionToken);
+}
+```
+
+On later visits, restore only after the signed session is verified. Never trust
+a separately cached address or a local boolean marker:
+
+```js
+const token = localStorage.getItem('wallet-link-session');
+const restored = token ? await HazbaseKit.verifyWalletLinkSession(token) : null;
+if (restored) {
+  console.log('restored wallet', restored.walletAddress);
+}
+```
+
+Link sessions are bound to the requesting origin and purpose and expire after a
+server-configured lifetime (seven days by default).
+
+`requestWalletAddress()` remains available for non-security-sensitive display
+or migration code. Do not use a raw returned address as authentication,
+authorization, ownership, or eligibility evidence.
 
 For x402 handoff pages, use the browser helpers to keep URL generation and
 extension messages consistent across services:

@@ -77,12 +77,14 @@
     "devDependencies": {
         "@types/node": "^20.11.19",
         "rimraf": "^5.0.1",
-        "tsup": "^7.3.0",
+        "tsup": "^8.5.1",
         "typescript": "^5.4.0"
     },
     "scripts": {
         "build": "tsup",
         "clean": "rimraf dist",
+        "test": "npm run test:wallet-link",
+        "test:wallet-link": "npm run build && node --test test/wallet-link.test.mjs",
         "prepublishOnly": "npm run build"
     },
     "publishConfig": {

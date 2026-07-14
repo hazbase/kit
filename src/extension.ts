@@ -4,6 +4,12 @@ import {
   parseJsonRecord,
   safeCompletionParam,
 } from './x402';
+import {
+  createHazbaseWalletClient,
+  type WalletLinkChallengeResult,
+  type VerifyWalletLinkResult,
+  type VerifyWalletLinkSessionResult,
+} from './wallet';
 
 export const HAZBASE_X402_BRIDGE_VERSION = 1;
 export const HAZBASE_X402_BRIDGE_REQUEST = 'hazbase:x402:request';
@@ -12,6 +18,8 @@ export const HAZBASE_X402_BRIDGE_PAYMENT = 'hazbase:x402:payment';
 export const HAZBASE_X402_BRIDGE_ERROR = 'hazbase:x402:error';
 export const HAZBASE_WALLET_ADDRESS_REQUEST = 'hazbase:wallet:address-request';
 export const HAZBASE_WALLET_ADDRESS_RESPONSE = 'hazbase:wallet:address-response';
+export const HAZBASE_WALLET_LINK_REQUEST = 'hazbase:wallet:link-request';
+export const HAZBASE_WALLET_LINK_RESPONSE = 'hazbase:wallet:link-response';
 
 export type RequestWalletAddressOptions = {
   id?: string;
@@ -28,6 +36,33 @@ export type RequestWalletAddressResult =
   | { ok: true; address: string; id: string; message: Record<string, unknown> }
   | { ok: false; id: string; reason?: string; timedOut?: boolean; message?: Record<string, unknown> };
 
+export type RequestWalletLinkOptions = {
+  id?: string;
+  purpose?: string;
+  origin?: string;
+  apiEndpoint?: string;
+  fetcher?: typeof fetch;
+  targetWindow?: Window;
+  timeoutMs?: number;
+  retryIntervalMs?: number;
+  signal?: AbortSignal;
+};
+
+export type RequestWalletLinkResult =
+  | ({ ok: true; id: string; address: string; proof: string; message: Record<string, unknown> } & VerifyWalletLinkResult)
+  | { ok: false; id: string; reason?: string; timedOut?: boolean; message?: Record<string, unknown>; challenge?: WalletLinkChallengeResult };
+
+export type WalletLinkHandoff = {
+  challenge: WalletLinkChallengeResult;
+  returnUrl: string;
+};
+
+export type WalletLinkProofFragment = {
+  challengeId: string;
+  nonce: string;
+  proof: string;
+};
+
 export type ConsumeWalletAddressOptions = {
   input?: string;
   paramNames?: string[];
@@ -37,6 +72,12 @@ export type ConsumeWalletAddressOptions = {
 export type WalletAddressPwaUrlOptions = {
   returnUrl?: string;
   returnParam?: string;
+};
+
+export type WalletLinkPwaUrlOptions = {
+  challenge: WalletLinkChallengeResult;
+  returnUrl?: string;
+  requestParam?: string;
 };
 
 export type CreateX402WalletUrlOptions = {
@@ -96,7 +137,8 @@ export type InstallHazbaseWalletContentBridgeOptions = {
   walletLinkSelector?: string;
   walletName?: string;
   openX402MessageType: string;
-  receiveAddressMessageType: string;
+  receiveAddressMessageType?: string;
+  receiveWalletLinkMessageType?: string;
   runtimePaymentMessageType: string;
   runtimeCancelledMessageType: string;
   legacyAddressRequestType?: string;
@@ -256,6 +298,7 @@ export function shortenAddress(value: unknown, options: { head?: number; tail?: 
   return text.length > head + tail + 1 ? `${text.slice(0, head)}...${text.slice(-tail)}` : text;
 }
 
+/** @deprecated A fragment address is not proof of identity. Use consumeAndVerifyWalletLinkFromFragment instead. */
 export function consumeWalletAddressFromFragment(options: ConsumeWalletAddressOptions = {}): string {
   const paramNames = options.paramNames ?? ['walletAddress', 'hazbaseWalletAddress'];
   const url = new URL(options.input ?? globalThis.location?.href ?? '');
@@ -276,18 +319,245 @@ export function consumeWalletAddressFromFragment(options: ConsumeWalletAddressOp
   return address;
 }
 
+/** @deprecated Raw address handoff is not proof of identity. Use the wallet-link helpers instead. */
 export function createWalletAddressReturnUrl(input = globalThis.location?.href ?? ''): string {
   const url = new URL(input);
   url.hash = '';
   return url.toString();
 }
 
+/** @deprecated Raw address handoff is not proof of identity. Use createWalletLinkPwaUrl instead. */
 export function createWalletAddressPwaUrl(walletUrl: string, options: WalletAddressPwaUrlOptions = {}): string {
   const url = new URL(walletUrl);
   url.searchParams.set(options.returnParam ?? 'walletAddressReturnUrl', options.returnUrl ?? createWalletAddressReturnUrl());
   return url.toString();
 }
 
+export function createWalletLinkPwaUrl(walletUrl: string, options: WalletLinkPwaUrlOptions): string {
+  const url = new URL(walletUrl);
+  const returnUrl = validateWalletLinkReturnUrl(
+    options.returnUrl ?? createWalletAddressReturnUrl(),
+    options.challenge.origin,
+  );
+  const handoff: WalletLinkHandoff = {
+    challenge: options.challenge,
+    returnUrl,
+  };
+  url.searchParams.set(options.requestParam ?? 'walletLinkRequest', base64UrlEncode(JSON.stringify(handoff)));
+  return url.toString();
+}
+
+export function readWalletLinkHandoffFromUrl(
+  input = globalThis.location?.href ?? '',
+  requestParam = 'walletLinkRequest',
+): WalletLinkHandoff | null {
+  try {
+    const url = new URL(input);
+    const encoded = url.searchParams.get(requestParam);
+    if (!encoded) return null;
+    const decoded = decodeX402Param(encoded);
+    const body = decoded ? parseJsonRecord(decoded) : null;
+    const challenge = isRecord(body?.challenge) ? body.challenge : null;
+    if (!challenge || typeof body?.returnUrl !== 'string') return null;
+    if (
+      typeof challenge.challengeId !== 'string' ||
+      typeof challenge.nonce !== 'string' ||
+      typeof challenge.origin !== 'string' ||
+      typeof challenge.purpose !== 'string' ||
+      typeof challenge.expiresAt !== 'string'
+    ) return null;
+    return {
+      challenge: challenge as WalletLinkChallengeResult,
+      returnUrl: validateWalletLinkReturnUrl(body.returnUrl, challenge.origin),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function createWalletLinkReturnUrl(returnUrl: string, result: WalletLinkProofFragment): string {
+  const url = new URL(returnUrl);
+  const params = new URLSearchParams(url.hash.replace(/^#/u, ''));
+  params.set('walletLinkChallengeId', result.challengeId);
+  params.set('walletLinkNonce', result.nonce);
+  params.set('walletLinkProof', result.proof);
+  url.hash = params.toString();
+  return url.toString();
+}
+
+export function consumeWalletLinkProofFromFragment(
+  input = globalThis.location?.href ?? '',
+  replaceState = true,
+): WalletLinkProofFragment | null {
+  try {
+    const url = new URL(input);
+    const params = new URLSearchParams(url.hash.replace(/^#/u, ''));
+    const result = {
+      challengeId: params.get('walletLinkChallengeId') ?? '',
+      nonce: params.get('walletLinkNonce') ?? '',
+      proof: params.get('walletLinkProof') ?? '',
+    };
+    if (!result.challengeId || !result.nonce || !result.proof) return null;
+    params.delete('walletLinkChallengeId');
+    params.delete('walletLinkNonce');
+    params.delete('walletLinkProof');
+    if (replaceState && globalThis.history && globalThis.location) {
+      url.hash = params.toString();
+      globalThis.history.replaceState(null, '', url.toString());
+    }
+    return result;
+  } catch {
+    return null;
+  }
+}
+
+export async function verifyWalletLinkProof(
+  proof: WalletLinkProofFragment,
+  options: { origin?: string; apiEndpoint?: string; fetcher?: typeof fetch } = {},
+): Promise<VerifyWalletLinkResult> {
+  const client = createHazbaseWalletClient({
+    ...(options.apiEndpoint ? { apiEndpoint: options.apiEndpoint } : {}),
+    ...(options.fetcher ? { fetcher: options.fetcher } : {}),
+  });
+  return client.verifyWalletLink({
+    ...proof,
+    origin: options.origin ?? globalThis.location?.origin ?? '',
+  });
+}
+
+export async function verifyWalletLinkSession(
+  linkSessionToken: string,
+  options: { origin?: string; apiEndpoint?: string; fetcher?: typeof fetch } = {},
+): Promise<VerifyWalletLinkSessionResult> {
+  const client = createHazbaseWalletClient({
+    ...(options.apiEndpoint ? { apiEndpoint: options.apiEndpoint } : {}),
+    ...(options.fetcher ? { fetcher: options.fetcher } : {}),
+  });
+  return client.verifyWalletLinkSession({
+    linkSessionToken,
+    origin: options.origin ?? globalThis.location?.origin ?? '',
+  });
+}
+
+export async function consumeAndVerifyWalletLinkFromFragment(
+  options: { input?: string; replaceState?: boolean; origin?: string; apiEndpoint?: string; fetcher?: typeof fetch } = {},
+): Promise<VerifyWalletLinkResult | null> {
+  const input = options.input ?? globalThis.location?.href ?? '';
+  const proof = consumeWalletLinkProofFromFragment(input, false);
+  if (!proof) return null;
+  const verified = await verifyWalletLinkProof(proof, options);
+  if (options.replaceState !== false) consumeWalletLinkProofFromFragment(input, true);
+  return verified;
+}
+
+export async function requestWalletLink(options: RequestWalletLinkOptions = {}): Promise<RequestWalletLinkResult> {
+  const origin = options.origin ?? globalThis.location?.origin ?? '';
+  const id = options.id ?? createHazbaseRequestId('wallet-link');
+  const client = createHazbaseWalletClient({
+    ...(options.apiEndpoint ? { apiEndpoint: options.apiEndpoint } : {}),
+    ...(options.fetcher ? { fetcher: options.fetcher } : {}),
+  });
+  let challenge: WalletLinkChallengeResult;
+  try {
+    challenge = await client.createWalletLinkChallenge({
+      origin,
+      purpose: options.purpose ?? 'wallet_connection',
+    });
+  } catch (error) {
+    return { ok: false, id, reason: error instanceof Error ? error.message : String(error) };
+  }
+  const response = await requestWalletLinkProof(challenge, { ...options, id, origin });
+  if (response.ok !== true) return { ...response, challenge };
+  try {
+    const verified = await client.verifyWalletLink({
+      challengeId: challenge.challengeId,
+      nonce: challenge.nonce,
+      proof: response.proof,
+      origin,
+    });
+    return {
+      ok: true,
+      id,
+      address: verified.walletAddress,
+      proof: response.proof,
+      message: response.message,
+      ...verified,
+    };
+  } catch (error) {
+    return { ok: false, id, reason: error instanceof Error ? error.message : String(error), message: response.message, challenge };
+  }
+}
+
+function requestWalletLinkProof(
+  challenge: WalletLinkChallengeResult,
+  options: RequestWalletLinkOptions & { id: string; origin: string },
+): Promise<
+  | { ok: true; id: string; proof: string; message: Record<string, unknown> }
+  | { ok: false; id: string; reason?: string; timedOut?: boolean; message?: Record<string, unknown> }
+> {
+  const target = options.targetWindow ?? globalThis.window;
+  const timeoutMs = Math.max(0, Number(options.timeoutMs ?? 3500));
+  const retryIntervalMs = Math.max(0, Number(options.retryIntervalMs ?? 300));
+  if (!target?.postMessage || !globalThis.window?.addEventListener) {
+    return Promise.resolve({ ok: false, id: options.id, reason: 'window_unavailable' });
+  }
+  if (options.signal?.aborted) {
+    return Promise.resolve({ ok: false, id: options.id, reason: 'aborted' });
+  }
+  return new Promise((resolve) => {
+    let settled = false;
+    let retryTimer: ReturnType<typeof setInterval> | undefined;
+    let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
+    const finish = (result: Parameters<typeof resolve>[0]) => {
+      if (settled) return;
+      settled = true;
+      if (retryTimer) clearInterval(retryTimer);
+      if (timeoutTimer) clearTimeout(timeoutTimer);
+      globalThis.window.removeEventListener('message', onMessage);
+      options.signal?.removeEventListener('abort', onAbort);
+      resolve(result);
+    };
+    const postRequest = () => {
+      try {
+        target.postMessage({
+          type: HAZBASE_WALLET_LINK_REQUEST,
+          version: HAZBASE_X402_BRIDGE_VERSION,
+          id: options.id,
+          challenge,
+        }, options.origin);
+      } catch (error) {
+        finish({ ok: false, id: options.id, reason: error instanceof Error ? error.message : String(error) });
+      }
+    };
+    const onMessage = (event: MessageEvent) => {
+      if (event.source !== target || event.origin !== options.origin) return;
+      const message = isRecord(event.data) ? event.data : null;
+      if (!message || message.type !== HAZBASE_WALLET_LINK_RESPONSE || message.id !== options.id) return;
+      if (message.ok === true && typeof message.proof === 'string' && message.proof) {
+        finish({ ok: true, id: options.id, proof: message.proof, message });
+        return;
+      }
+      finish({ ok: false, id: options.id, reason: typeof message.reason === 'string' ? message.reason : undefined, message });
+    };
+    const onAbort = () => finish({ ok: false, id: options.id, reason: 'aborted' });
+    globalThis.window.addEventListener('message', onMessage);
+    options.signal?.addEventListener('abort', onAbort, { once: true });
+    postRequest();
+    if (retryIntervalMs > 0) retryTimer = setInterval(postRequest, retryIntervalMs);
+    timeoutTimer = setTimeout(() => finish({ ok: false, id: options.id, timedOut: true }), timeoutMs);
+  });
+}
+
+function validateWalletLinkReturnUrl(returnUrl: string, challengeOrigin: string): string {
+  const resolvedReturnUrl = new URL(returnUrl);
+  const expectedOrigin = new URL(challengeOrigin).origin;
+  if (resolvedReturnUrl.origin !== expectedOrigin) {
+    throw new Error('wallet_link_return_origin_mismatch');
+  }
+  return resolvedReturnUrl.toString();
+}
+
+/** @deprecated A raw address is not proof of identity. Use requestWalletLink instead. */
 export function requestWalletAddress(options: RequestWalletAddressOptions = {}): Promise<RequestWalletAddressResult> {
   const target = options.targetWindow ?? globalThis.window;
   const origin = options.origin ?? globalThis.location?.origin ?? '*';
@@ -546,12 +816,48 @@ function bindReceiveAddressBridge(
   runtime: HazbaseRuntimeLike | undefined,
   options: InstallHazbaseWalletContentBridgeOptions,
 ): void {
+  const walletLinkResponses = new Map<string, Record<string, unknown>>();
+  const pendingWalletLinks = new Set<string>();
   window.addEventListener('message', (event) => {
     if (event.source !== window || event.origin !== location.origin) return;
     const record = isRecord(event.data) ? event.data : {};
+    if (record.type === HAZBASE_WALLET_LINK_REQUEST && options.receiveWalletLinkMessageType) {
+      const requestId = typeof record.id === 'string' ? record.id : '';
+      const challenge = isRecord(record.challenge) ? record.challenge : null;
+      if (!requestId || !challenge) return;
+      const challengeId = typeof challenge.challengeId === 'string' ? challenge.challengeId : '';
+      if (!challengeId) return;
+      const requestKey = `${requestId}:${challengeId}`;
+      const cached = walletLinkResponses.get(requestKey);
+      if (cached) {
+        postBridgeMessage(cached);
+        return;
+      }
+      if (pendingWalletLinks.has(requestKey)) return;
+      pendingWalletLinks.add(requestKey);
+      runtime?.sendMessage?.({
+        type: options.receiveWalletLinkMessageType,
+        challenge,
+        origin: event.origin,
+      }, (response: unknown) => {
+        const error = runtime?.lastError;
+        const body = isRecord(response) ? response : {};
+        const bridgeResponse = {
+          type: HAZBASE_WALLET_LINK_RESPONSE,
+          version: HAZBASE_X402_BRIDGE_VERSION,
+          id: requestId,
+          ...(error ? { ok: false, reason: error.message || options.unavailableMessage || 'Wallet extension is unavailable.' } : body),
+        };
+        pendingWalletLinks.delete(requestKey);
+        walletLinkResponses.set(requestKey, bridgeResponse);
+        postBridgeMessage(bridgeResponse);
+      });
+      return;
+    }
     const isGenericRequest = record.type === HAZBASE_WALLET_ADDRESS_REQUEST;
     const isLegacyRequest = options.legacyAddressRequestType && record.type === options.legacyAddressRequestType;
     if (!isGenericRequest && !isLegacyRequest) return;
+    if (!options.receiveAddressMessageType) return;
     const requestId = typeof record.id === 'string'
       ? record.id
       : typeof record.requestId === 'string'
@@ -570,6 +876,10 @@ function bindReceiveAddressBridge(
       });
     });
   }, { signal });
+  signal.addEventListener('abort', () => {
+    pendingWalletLinks.clear();
+    walletLinkResponses.clear();
+  }, { once: true });
 }
 
 function bindRuntimeBridge(
