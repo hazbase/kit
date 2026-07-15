@@ -71,10 +71,11 @@
     ],
     "sideEffects": false,
     "dependencies": {
-        "@hazbase/relayer": "^0.0.19",
+        "@hazbase/relayer": "^0.0.20",
         "ethers": "^6.16.0"
     },
     "devDependencies": {
+        "@hazbase/auth": "0.6.1",
         "@types/node": "^20.11.19",
         "rimraf": "^5.0.1",
         "tsup": "^8.5.1",
@@ -91,6 +92,7 @@
         "access": "public"
     },
     "overrides": {
-        "ws": "^8.21.0"
+        "ws": "^8.21.0",
+        "esbuild": "^0.28.1"
     }
 }
